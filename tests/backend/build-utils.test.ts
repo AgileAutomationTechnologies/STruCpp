@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Autonomy / OpenPLC Project
 import { existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { delimiter, resolve } from "node:path";
 import { describe, it, expect } from "vitest";
 import { splitCxxFlags } from "../../src/cxx-flags.js";
 import {
   findRuntimeIncludeDir,
+  getCxxEnv,
   isCompilerAvailable,
 } from "../../src/node/build-utils.js";
 
@@ -43,6 +44,24 @@ describe("isCompilerAvailable", () => {
 
   it("returns false for nonexistent compiler", () => {
     expect(isCompilerAvailable("nonexistent-compiler-xyz-12345")).toBe(false);
+  });
+});
+
+describe("getCxxEnv", () => {
+  it("prepends an absolute Windows compiler directory to PATH", () => {
+    if (process.platform !== "win32") return;
+    const env = getCxxEnv("C:\\msys64\\ucrt64\\bin\\g++.exe");
+    expect((env?.PATH ?? "").split(delimiter)[0]).toBe(
+      "C:\\msys64\\ucrt64\\bin",
+    );
+  });
+
+  it("prepends a forward-slash Windows compiler directory to PATH", () => {
+    if (process.platform !== "win32") return;
+    const env = getCxxEnv("C:/msys64/ucrt64/bin/g++.exe");
+    expect((env?.PATH ?? "").split(delimiter)[0].replace(/\\/g, "/")).toBe(
+      "C:/msys64/ucrt64/bin",
+    );
   });
 });
 

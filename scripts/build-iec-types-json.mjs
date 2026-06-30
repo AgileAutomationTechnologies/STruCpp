@@ -18,11 +18,15 @@
 
 import { writeFileSync } from "fs";
 import { resolve, dirname } from "path";
-import { fileURLToPath } from "url";
+import { fileURLToPath, pathToFileURL } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const projectRoot = resolve(__dirname, "..");
+
+function importFile(path) {
+  return import(pathToFileURL(path).href);
+}
 
 /**
  * Bump on any breaking change to the per-type metadata shape (renamed
@@ -36,7 +40,7 @@ export async function buildIecTypesJson() {
   // Load from the freshly-compiled dist/ — `rebuild-libs.mjs` does a
   // `tsc` pass before importing, so by the time this runs the dist
   // mirror of `iec-types-data.ts` is current.
-  const data = await import(
+  const data = await importFile(
     resolve(projectRoot, "dist/semantic/iec-types-data.js")
   );
 

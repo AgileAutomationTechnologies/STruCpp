@@ -34,12 +34,16 @@
 import { execSync } from "child_process";
 import { readFileSync, readdirSync, writeFileSync, existsSync, copyFileSync, statSync } from "fs";
 import { resolve, dirname, relative, sep, posix } from "path";
-import { fileURLToPath } from "url";
+import { fileURLToPath, pathToFileURL } from "url";
 import { buildIecTypesJson } from "./build-iec-types-json.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const projectRoot = resolve(__dirname, "..");
+
+function importFile(path) {
+  return import(pathToFileURL(path).href);
+}
 
 const libsDir = resolve(projectRoot, "libs");
 const sourcesRoot = resolve(libsDir, "sources");
@@ -102,22 +106,22 @@ async function refreshAndLoadCompiler() {
     );
   }
 
-  const compiler = await import(
+  const compiler = await importFile(
     resolve(projectRoot, "dist/library/library-compiler.js")
   );
-  const nodeLoader = await import(
+  const nodeLoader = await importFile(
     resolve(projectRoot, "dist/node/library-loader.js")
   );
-  const nodeConfig = await import(
+  const nodeConfig = await importFile(
     resolve(projectRoot, "dist/node/library-config.js")
   );
-  const pureConfig = await import(
+  const pureConfig = await importFile(
     resolve(projectRoot, "dist/library/library-config.js")
   );
-  const codesysImport = await import(
+  const codesysImport = await importFile(
     resolve(projectRoot, "dist/library/codesys-import/index.js")
   );
-  const stdFnRegistry = await import(
+  const stdFnRegistry = await importFile(
     resolve(projectRoot, "dist/semantic/std-function-registry.js")
   );
   compileStlib = compiler.compileStlib;

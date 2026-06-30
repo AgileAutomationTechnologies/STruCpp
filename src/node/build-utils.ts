@@ -17,7 +17,8 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, statSync } from "node:fs";
 import { platform } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { delimiter } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 
 import { extractIncludePaths } from "../cxx-flags.js";
 
@@ -27,7 +28,23 @@ export { extractIncludePaths, splitCxxFlags } from "../cxx-flags.js";
  * On macOS, newer Xcode CLT versions move libc++ headers to the SDK.
  * Returns an env object with CPLUS_INCLUDE_PATH set so g++ can find them.
  */
-export function getCxxEnv(): NodeJS.ProcessEnv | undefined {
+export function getCxxEnv(
+  compilerPath?: string,
+): NodeJS.ProcessEnv | undefined {
+  if (
+    platform() === "win32" &&
+    compilerPath &&
+    (isAbsolute(compilerPath) ||
+      compilerPath.includes("\\") ||
+      compilerPath.includes("/"))
+  ) {
+    const compilerDir = dirname(resolve(compilerPath));
+    return {
+      ...process.env,
+      PATH: `${compilerDir}${delimiter}${process.env.PATH ?? ""}`,
+    };
+  }
+
   if (platform() !== "darwin") return undefined;
   try {
     const sdkPath = execFileSync("xcrun", ["--show-sdk-path"], {

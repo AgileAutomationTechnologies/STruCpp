@@ -20,16 +20,20 @@
 
 import { readFileSync, readdirSync, writeFileSync, mkdirSync, existsSync } from "fs";
 import { resolve, dirname } from "path";
-import { fileURLToPath } from "url";
+import { fileURLToPath, pathToFileURL } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = dirname(__filename);
 const projectRoot = resolve(__dirname, "..");
 
-const { compileStlib } = await import(
+function importFile(path) {
+  return import(pathToFileURL(path).href);
+}
+
+const { compileStlib } = await importFile(
   resolve(projectRoot, "dist/library/library-compiler.js")
 );
-const { loadLibraryConfig, applyLibraryConfigDocumentation } = await import(
+const { loadLibraryConfig, applyLibraryConfigDocumentation } = await importFile(
   resolve(projectRoot, "dist/library/library-config.js")
 );
 
