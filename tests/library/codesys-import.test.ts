@@ -5,7 +5,8 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync, existsSync, writeFileSync, unlinkSync } from "fs";
 import { execFileSync } from "child_process";
-import { resolve } from "path";
+import { tmpdir } from "os";
+import { join, resolve } from "path";
 import {
   importCodesysLibraryFromBytes,
   detectFormat,
@@ -253,7 +254,7 @@ describe("importCodesysLibrary", () => {
   });
 
   it("returns error for unrecognized format", async () => {
-    const tmpPath = "/tmp/test_garbage.lib";
+    const tmpPath = join(tmpdir(), "test_garbage.lib");
     writeFileSync(tmpPath, "GARBAGE_DATA_NOT_CODESYS");
     try {
       const result = await importCodesysLibrary(tmpPath);

@@ -44,7 +44,9 @@ export const PCH_INCLUDES = `#pragma once
  */
 export const hasGpp = (() => {
   try {
-    execSync('which g++', { stdio: 'ignore' });
+    execSync(process.platform === 'win32' ? 'where.exe g++' : 'command -v g++', {
+      stdio: 'ignore',
+    });
     return true;
   } catch {
     return false;
