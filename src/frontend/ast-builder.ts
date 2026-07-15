@@ -772,18 +772,28 @@ export class ASTBuilder {
 
     // GET block
     let getter: Statement[] | undefined;
+    let getterVarBlocks: VarBlock[] | undefined;
     const getterNode = getFirstNode(children.propertyGetter);
     if (getterNode) {
       const getterChildren = getterNode.children as CstChildren;
+      const blocks = getAllNodes(getterChildren.propertyVarBlock).map((block) =>
+        this.buildMethodVarBlock(block),
+      );
+      if (blocks.length > 0) getterVarBlocks = blocks;
       const getterStmtList = getFirstNode(getterChildren.statementList);
       getter = this.extractStatementsFromList(getterStmtList);
     }
 
     // SET block
     let setter: Statement[] | undefined;
+    let setterVarBlocks: VarBlock[] | undefined;
     const setterNode = getFirstNode(children.propertySetter);
     if (setterNode) {
       const setterChildren = setterNode.children as CstChildren;
+      const blocks = getAllNodes(setterChildren.propertyVarBlock).map((block) =>
+        this.buildMethodVarBlock(block),
+      );
+      if (blocks.length > 0) setterVarBlocks = blocks;
       const setterStmtList = getFirstNode(setterChildren.statementList);
       setter = this.extractStatementsFromList(setterStmtList);
     }
@@ -794,7 +804,9 @@ export class ASTBuilder {
       name,
       type,
       visibility,
+      ...(getterVarBlocks !== undefined ? { getterVarBlocks } : {}),
       ...(getter !== undefined ? { getter } : {}),
+      ...(setterVarBlocks !== undefined ? { setterVarBlocks } : {}),
       ...(setter !== undefined ? { setter } : {}),
     };
   }

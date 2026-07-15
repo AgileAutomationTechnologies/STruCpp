@@ -47,6 +47,28 @@ describe("Type Validation", () => {
       );
     });
 
+    it("should type-check property accessor locals in their accessor scope", () => {
+      const { errors } = analyzeSource(`
+        FUNCTION_BLOCK Counter
+          PROPERTY Current : DINT
+            GET
+              VAR snapshot : DINT; END_VAR
+              snapshot := 'invalid';
+              Current := snapshot;
+            END_GET
+          END_PROPERTY
+        END_FUNCTION_BLOCK
+      `);
+      expect(
+        errors.some(
+          (error) =>
+            error.includes("Cannot assign") &&
+            error.includes("STRING") &&
+            error.includes("DINT"),
+        ),
+      ).toBe(true);
+    });
+
     it("should allow valid same-type assignment", () => {
       const { errors } = analyzeSource(`
         PROGRAM Main

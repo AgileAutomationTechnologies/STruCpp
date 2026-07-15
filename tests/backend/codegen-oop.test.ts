@@ -444,6 +444,36 @@ describe("Codegen - OOP Features (Phase 5.2)", () => {
       expect(result.cppCode).toContain("_SPEED = SPEED;");
     });
 
+    it("should generate scoped GET and SET local variables", () => {
+      const result = compileAndCheck(`
+        FUNCTION_BLOCK Counter
+          VAR value : DINT; END_VAR
+          PROPERTY Current : DINT
+            GET
+              VAR snapshot : DINT := 0; END_VAR
+              VAR_TEMP adjusted : DINT; END_VAR
+              snapshot := value;
+              adjusted := snapshot + 1;
+              Current := adjusted;
+            END_GET
+            SET
+              VAR_TEMP requested : DINT; END_VAR
+              requested := Current;
+              value := requested;
+            END_SET
+          END_PROPERTY
+        END_FUNCTION_BLOCK
+        PROGRAM Main END_PROGRAM
+      `);
+
+      expect(result.cppCode).toContain("IEC_DINT SNAPSHOT = 0;");
+      expect(result.cppCode).toContain("IEC_DINT ADJUSTED;");
+      expect(result.cppCode).toContain("CURRENT_result = ADJUSTED;");
+      expect(result.cppCode).toContain("IEC_DINT REQUESTED;");
+      expect(result.cppCode).toContain("REQUESTED = CURRENT;");
+      expect(result.cppCode).toContain("VALUE = REQUESTED;");
+    });
+
     it("should generate read-only property (GET only)", () => {
       const result = compileAndCheck(`
         FUNCTION_BLOCK Counter

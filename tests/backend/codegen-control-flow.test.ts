@@ -251,6 +251,32 @@ describe("Phase 3.2: CASE Statement Code Generation", () => {
     expect(result.cppCode).toContain("case TRAFFICSTATE::YELLOW:");
   });
 
+  it("should generate every grouped qualified enum CASE label", () => {
+    const result = compileST(`
+      TYPE
+        Pattern : (Single, Delayed, Retriggerable, Periodic, Burst);
+      END_TYPE
+      PROGRAM TestPatternCase
+        VAR state : Pattern; x : INT; END_VAR
+        CASE state OF
+          Pattern.Single, Pattern.Delayed, Pattern.Retriggerable,
+          Pattern.Periodic, Pattern.Burst:
+            x := 1;
+        END_CASE;
+      END_PROGRAM
+    `);
+    expect(result.success).toBe(true);
+    for (const member of [
+      "SINGLE",
+      "DELAYED",
+      "RETRIGGERABLE",
+      "PERIODIC",
+      "BURST",
+    ]) {
+      expect(result.cppCode).toContain(`case PATTERN::${member}:`);
+    }
+  });
+
   it("should generate enum dot-notation in assignments and expressions", () => {
     const result = compileST(`
       TYPE

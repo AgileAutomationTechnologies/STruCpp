@@ -16,6 +16,7 @@ import type {
   Expression,
   FunctionBlockDeclaration,
   FunctionCallExpression,
+  IECType,
   MethodDeclaration,
   MockFunctionStatement,
   TypeDefinition,
@@ -404,6 +405,57 @@ export class SemanticAnalyzer {
             }
           }
         }
+
+        // Property accessors have their own local-variable scopes. Define the
+        // property result/input name in each scope so type checking resolves
+        // `PropertyName := ...` in GET and reads of `PropertyName` in SET.
+        for (const prop of fbDecl.properties) {
+          let propertyType: IECType | undefined;
+          try {
+            propertyType = this.resolveVarType(prop.type.name);
+          } catch {
+            // validateTypeReferences emits the authoritative undefined-type
+            // diagnostic; still build local scopes so their errors are kept.
+          }
+
+          const buildAccessorScope = (
+            accessor: "GET" | "SET",
+            varBlocks: VarBlock[],
+          ): void => {
+            const accessorScope = this.symbolTables.createPropertyAccessorScope(
+              fbDecl.name,
+              prop.name,
+              accessor,
+            );
+            if (propertyType !== undefined) {
+              accessorScope.define({
+                name: prop.name,
+                kind: "variable",
+                type: propertyType,
+                declaration: undefined as unknown as VarDeclaration,
+                isInput: accessor === "SET",
+                isOutput: accessor === "GET",
+                isInOut: false,
+                isExternal: false,
+                isGlobal: false,
+                isRetain: false,
+              });
+            }
+            this.buildVarBlockSymbols(
+              varBlocks,
+              accessorScope,
+              "functionBlock",
+              fbDecl.name,
+            );
+          };
+
+          if (prop.getter) {
+            buildAccessorScope("GET", prop.getterVarBlocks ?? []);
+          }
+          if (prop.setter) {
+            buildAccessorScope("SET", prop.setterVarBlocks ?? []);
+          }
+        }
       } catch (err) {
         if (err instanceof Error) {
           this.addError(
@@ -654,6 +706,30 @@ export class SemanticAnalyzer {
       const scope = this.symbolTables.getFBScope(fb.name);
       if (scope) {
         this.validateStatementsForConstantAssignment(fb.body, scope);
+        for (const prop of fb.properties) {
+          if (prop.getter) {
+            const getterScope = this.symbolTables.getPropertyAccessorScope(
+              fb.name,
+              prop.name,
+              "GET",
+            );
+            this.validateStatementsForConstantAssignment(
+              prop.getter,
+              getterScope ?? scope,
+            );
+          }
+          if (prop.setter) {
+            const setterScope = this.symbolTables.getPropertyAccessorScope(
+              fb.name,
+              prop.name,
+              "SET",
+            );
+            this.validateStatementsForConstantAssignment(
+              prop.setter,
+              setterScope ?? scope,
+            );
+          }
+        }
       }
     }
   }
@@ -1185,6 +1261,16 @@ export class SemanticAnalyzer {
     // Check variable declarations in function blocks
     for (const fb of ast.functionBlocks) {
       this.checkVarBlocksForAbstractInstantiation(fb.varBlocks, abstractFBs);
+      for (const prop of fb.properties) {
+        this.checkVarBlocksForAbstractInstantiation(
+          prop.getterVarBlocks ?? [],
+          abstractFBs,
+        );
+        this.checkVarBlocksForAbstractInstantiation(
+          prop.setterVarBlocks ?? [],
+          abstractFBs,
+        );
+      }
     }
 
     // Check variable declarations in functions
@@ -1409,6 +1495,32 @@ export class SemanticAnalyzer {
           methodVarTypeMap,
           ast,
         );
+      }
+      for (const prop of fb.properties) {
+        if (prop.getter) {
+          const getterTypes = this.buildVarTypeMap(prop.getterVarBlocks ?? []);
+          for (const [k, v] of varTypeMap) {
+            if (!getterTypes.has(k)) getterTypes.set(k, v);
+          }
+          getterTypes.set(prop.name.toUpperCase(), prop.type.name);
+          this.walkStatementsForExpressionValidation(
+            prop.getter,
+            getterTypes,
+            ast,
+          );
+        }
+        if (prop.setter) {
+          const setterTypes = this.buildVarTypeMap(prop.setterVarBlocks ?? []);
+          for (const [k, v] of varTypeMap) {
+            if (!setterTypes.has(k)) setterTypes.set(k, v);
+          }
+          setterTypes.set(prop.name.toUpperCase(), prop.type.name);
+          this.walkStatementsForExpressionValidation(
+            prop.setter,
+            setterTypes,
+            ast,
+          );
+        }
       }
     }
   }
@@ -2364,6 +2476,14 @@ export class SemanticAnalyzer {
           prop.type,
           `PROPERTY '${prop.name}' of '${fb.name}'`,
         );
+        validateVarBlocks(
+          prop.getterVarBlocks ?? [],
+          `GET accessor of PROPERTY '${prop.name}' of '${fb.name}'`,
+        );
+        validateVarBlocks(
+          prop.setterVarBlocks ?? [],
+          `SET accessor of PROPERTY '${prop.name}' of '${fb.name}'`,
+        );
       }
     }
 
@@ -2494,17 +2614,70 @@ export class SemanticAnalyzer {
         }
         for (const prop of fb.properties) {
           if (prop.getter) {
-            this.walkStatementsForUndeclaredVars(prop.getter, scope, {
-              fbName: fb.name,
-              propertyName: prop.name,
-            });
+            const getterScope = this.symbolTables.getPropertyAccessorScope(
+              fb.name,
+              prop.name,
+              "GET",
+            );
+            this.checkVarBlockInitializersForUndeclaredVars(
+              prop.getterVarBlocks ?? [],
+              getterScope ?? scope,
+              {
+                fbName: fb.name,
+                propertyName: prop.name,
+              },
+            );
+            this.walkStatementsForUndeclaredVars(
+              prop.getter,
+              getterScope ?? scope,
+              {
+                fbName: fb.name,
+                propertyName: prop.name,
+              },
+            );
           }
           if (prop.setter) {
-            this.walkStatementsForUndeclaredVars(prop.setter, scope, {
-              fbName: fb.name,
-              propertyName: prop.name,
-            });
+            const setterScope = this.symbolTables.getPropertyAccessorScope(
+              fb.name,
+              prop.name,
+              "SET",
+            );
+            this.checkVarBlockInitializersForUndeclaredVars(
+              prop.setterVarBlocks ?? [],
+              setterScope ?? scope,
+              {
+                fbName: fb.name,
+                propertyName: prop.name,
+              },
+            );
+            this.walkStatementsForUndeclaredVars(
+              prop.setter,
+              setterScope ?? scope,
+              {
+                fbName: fb.name,
+                propertyName: prop.name,
+              },
+            );
           }
+        }
+      }
+    }
+  }
+
+  /** Validate references used by accessor-local declaration initializers. */
+  private checkVarBlockInitializersForUndeclaredVars(
+    varBlocks: VarBlock[],
+    scope: Scope,
+    ctx: UndeclaredVarContext,
+  ): void {
+    for (const block of varBlocks) {
+      for (const declaration of block.declarations) {
+        if (declaration.initialValue) {
+          this.checkExpressionForUndeclaredVars(
+            declaration.initialValue,
+            scope,
+            ctx,
+          );
         }
       }
     }

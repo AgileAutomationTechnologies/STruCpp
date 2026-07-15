@@ -258,6 +258,43 @@ describe("Undeclared Variables - Positive (no false errors)", () => {
     `);
     expect(undeclaredErrors(result)).toHaveLength(0);
   });
+
+  it("should accept variables local to property accessors", () => {
+    const result = analyzeSource(`
+      FUNCTION_BLOCK Counter
+        VAR value : DINT; END_VAR
+        PROPERTY Current : DINT
+          GET
+            VAR snapshot : DINT; END_VAR
+            snapshot := value;
+            Current := snapshot;
+          END_GET
+          SET
+            VAR_TEMP requested : DINT; END_VAR
+            requested := Current;
+            value := requested;
+          END_SET
+        END_PROPERTY
+      END_FUNCTION_BLOCK
+    `);
+    expect(undeclaredErrors(result)).toHaveLength(0);
+  });
+
+  it("should let an accessor local shadow an FB member", () => {
+    const result = analyzeSource(`
+      FUNCTION_BLOCK Counter
+        VAR scratch : DINT; value : DINT; END_VAR
+        PROPERTY Current : DINT
+          GET
+            VAR scratch : DINT := 1; END_VAR
+            scratch := scratch + 1;
+            Current := scratch;
+          END_GET
+        END_PROPERTY
+      END_FUNCTION_BLOCK
+    `);
+    expect(undeclaredErrors(result)).toHaveLength(0);
+  });
 });
 
 // =============================================================================
@@ -265,6 +302,62 @@ describe("Undeclared Variables - Positive (no false errors)", () => {
 // =============================================================================
 
 describe("Undeclared Variables - Negative (must error)", () => {
+  it("should not leak a GET local into the SET accessor", () => {
+    const result = analyzeSource(`
+      FUNCTION_BLOCK Counter
+        VAR value : DINT; END_VAR
+        PROPERTY Current : DINT
+          GET
+            VAR snapshot : DINT; END_VAR
+            snapshot := value;
+            Current := snapshot;
+          END_GET
+          SET
+            value := snapshot;
+          END_SET
+        END_PROPERTY
+      END_FUNCTION_BLOCK
+    `);
+    const errs = undeclaredErrors(result);
+    expect(errs).toHaveLength(1);
+    expect(errs[0]!.message).toContain("'SNAPSHOT'");
+  });
+
+  it("should not leak an accessor local into the FB body", () => {
+    const result = analyzeSource(`
+      FUNCTION_BLOCK Counter
+        VAR value : DINT; END_VAR
+        PROPERTY Current : DINT
+          GET
+            VAR snapshot : DINT; END_VAR
+            snapshot := value;
+            Current := snapshot;
+          END_GET
+        END_PROPERTY
+        value := snapshot;
+      END_FUNCTION_BLOCK
+    `);
+    const errs = undeclaredErrors(result);
+    expect(errs).toHaveLength(1);
+    expect(errs[0]!.message).toContain("'SNAPSHOT'");
+  });
+
+  it("should validate names in accessor-local initializers", () => {
+    const result = analyzeSource(`
+      FUNCTION_BLOCK Counter
+        PROPERTY Current : DINT
+          GET
+            VAR snapshot : DINT := missingSource; END_VAR
+            Current := snapshot;
+          END_GET
+        END_PROPERTY
+      END_FUNCTION_BLOCK
+    `);
+    const errs = undeclaredErrors(result);
+    expect(errs).toHaveLength(1);
+    expect(errs[0]!.message).toContain("'MISSINGSOURCE'");
+  });
+
   it("should error on undeclared variable in assignment target", () => {
     const result = analyzeSource(`
       PROGRAM Main

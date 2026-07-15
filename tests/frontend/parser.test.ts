@@ -283,6 +283,24 @@ describe('STParser', () => {
       expect(result.errors).toHaveLength(0);
     });
 
+    it('should parse grouped qualified CASE labels beyond fixed lookahead sizes', () => {
+      const source = `
+        TYPE
+          Pattern : (Single, Delayed, Retriggerable, Periodic, Burst);
+        END_TYPE
+        PROGRAM Main
+          VAR state : Pattern; x : INT; END_VAR
+          CASE state OF
+            Pattern.Single, Pattern.Delayed, Pattern.Retriggerable,
+            Pattern.Periodic, Pattern.Burst:
+              x := 1;
+          END_CASE;
+        END_PROGRAM
+      `;
+      const result = parse(source);
+      expect(result.errors).toHaveLength(0);
+    });
+
     it('should parse CASE with mixed integer and identifier labels', () => {
       const source = `
         PROGRAM Main

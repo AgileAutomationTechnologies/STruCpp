@@ -32,13 +32,11 @@ import {
   readFileSync,
   writeFileSync,
   mkdirSync,
-  mkdtempSync,
-  rmSync,
   existsSync,
   statSync,
 } from "fs";
 import { resolve, basename, dirname, join, relative, sep } from "path";
-import { tmpdir, platform } from "os";
+import { platform } from "os";
 import { execFileSync } from "child_process";
 import { compile, getVersion, compileStlib } from "../index.js";
 import {
@@ -64,6 +62,10 @@ import {
 } from "./build-utils.js";
 import type { CompileError, CompileOptions } from "../types.js";
 import { importCodesysLibraryFromBytes } from "../library/codesys-import/index.js";
+import {
+  cleanupTestTempDirectory,
+  createTestTempDirectory,
+} from "./test-temp-directory.js";
 
 interface CLIOptions {
   inputs: string[];
@@ -716,7 +718,7 @@ function runTestMode(options: CLIOptions): void {
   const testMainCpp = generateTestMain(testFiles, testMainOpts);
 
   // 5. Write to temp directory
-  const tempDir = mkdtempSync(join(tmpdir(), "strucpp-test-"));
+  const tempDir = createTestTempDirectory();
   try {
     writeFileSync(join(tempDir, "generated.hpp"), result.headerCode, "utf-8");
     writeFileSync(join(tempDir, "generated.cpp"), result.cppCode, "utf-8");
@@ -729,7 +731,8 @@ function runTestMode(options: CLIOptions): void {
         "Error: Could not locate runtime include directory.\n" +
           '  Use --cxx-flags "-I/path/to/runtime/include" to specify it.',
       );
-      process.exit(1);
+      process.exitCode = 1;
+      return;
     }
 
     // Test runtime header directory
@@ -770,7 +773,8 @@ function runTestMode(options: CLIOptions): void {
         : "";
       console.error("Error: C++ compilation failed:");
       if (stderr) console.error(stderr);
-      process.exit(1);
+      process.exitCode = 1;
+      return;
     }
 
     // 8. Execute test binary and display results
@@ -800,15 +804,12 @@ function runTestMode(options: CLIOptions): void {
       exitCode = execErr.status ?? 1;
     }
 
-    // 9. Exit with test result code
-    process.exit(exitCode);
+    // 9. Report the test result after the temporary build directory is
+    // cleaned. Calling process.exit() here would bypass the finally block.
+    process.exitCode = exitCode;
   } finally {
     // 10. Cleanup temp directory
-    try {
-      rmSync(tempDir, { recursive: true, force: true });
-    } catch {
-      // Ignore cleanup errors
-    }
+    cleanupTestTempDirectory(tempDir);
   }
 }
 

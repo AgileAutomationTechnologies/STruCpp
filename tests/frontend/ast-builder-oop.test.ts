@@ -471,6 +471,43 @@ describe("AST Builder - OOP Features", () => {
       expect(prop.setter!.length).toBeGreaterThan(0);
     });
 
+    it("should retain accessor-local variable blocks separately", () => {
+      const ast = parseAndBuild(`
+        FUNCTION_BLOCK Counter
+          VAR value : DINT; END_VAR
+          PROPERTY Current : DINT
+            GET
+              VAR snapshot : DINT; END_VAR
+              VAR_TEMP adjusted : DINT; END_VAR
+              snapshot := value;
+              adjusted := snapshot + 1;
+              Current := adjusted;
+            END_GET
+            SET
+              VAR_TEMP requested : DINT; END_VAR
+              requested := Current;
+              value := requested;
+            END_SET
+          END_PROPERTY
+        END_FUNCTION_BLOCK
+      `);
+
+      const prop = ast.functionBlocks[0]!.properties[0]!;
+      expect(prop.getterVarBlocks?.map((block) => block.blockType)).toEqual([
+        "VAR",
+        "VAR_TEMP",
+      ]);
+      expect(
+        prop.getterVarBlocks?.flatMap((block) =>
+          block.declarations.flatMap((decl) => decl.names),
+        ),
+      ).toEqual(["SNAPSHOT", "ADJUSTED"]);
+      expect(prop.setterVarBlocks?.[0]?.blockType).toBe("VAR_TEMP");
+      expect(prop.setterVarBlocks?.[0]?.declarations[0]?.names).toEqual([
+        "REQUESTED",
+      ]);
+    });
+
     it("should build a read-only property (getter only)", () => {
       const ast = parseAndBuild(`
         FUNCTION_BLOCK Motor

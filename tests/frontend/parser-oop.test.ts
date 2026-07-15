@@ -588,6 +588,31 @@ describe('OOP Parser', () => {
       expect(result.cst).toBeDefined();
     });
 
+    it('should parse GET and SET local VAR and VAR_TEMP blocks', () => {
+      const source = `
+        FUNCTION_BLOCK Counter
+          VAR value : DINT; END_VAR
+          PROPERTY Current : DINT
+            GET
+              VAR snapshot : DINT; END_VAR
+              VAR_TEMP adjusted : DINT; END_VAR
+              snapshot := value;
+              adjusted := snapshot + 1;
+              Current := adjusted;
+            END_GET
+            SET
+              VAR_TEMP requested : DINT; END_VAR
+              requested := Current;
+              value := requested;
+            END_SET
+          END_PROPERTY
+        END_FUNCTION_BLOCK
+      `;
+      const result = parseSource(source);
+      expect(result.errors).toHaveLength(0);
+      expect(result.cst).toBeDefined();
+    });
+
     it('should parse a read-only property (getter only)', () => {
       const source = `
         FUNCTION_BLOCK Motor

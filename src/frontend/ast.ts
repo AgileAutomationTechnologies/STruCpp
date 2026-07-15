@@ -199,7 +199,11 @@ export interface PropertyDeclaration extends ASTNode {
   name: string;
   type: TypeReference;
   visibility: Visibility;
+  /** Variables scoped only to the GET accessor (TwinCAT extension). */
+  getterVarBlocks?: VarBlock[];
   getter?: Statement[];
+  /** Variables scoped only to the SET accessor (TwinCAT extension). */
+  setterVarBlocks?: VarBlock[];
   setter?: Statement[];
 }
 

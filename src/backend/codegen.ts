@@ -9,6 +9,7 @@
 
 import type {
   CompilationUnit,
+  VarBlock,
   VarDeclaration,
   Statement,
   Expression,
@@ -1944,30 +1945,55 @@ export class CodeGenerator {
   ): void {
     const type = this.mapTypeRefToCpp(prop.type);
 
+    const emitAccessorLocals = (varBlocks: VarBlock[]): void => {
+      for (const block of varBlocks) {
+        for (const decl of block.declarations) {
+          for (const name of decl.names) {
+            const initValue = decl.initialValue
+              ? ` = ${this.generateExpression(decl.initialValue)}`
+              : "";
+            this.emit(
+              `    ${this.mapTypeRefToCpp(decl.type)} ${name}${initValue};`,
+            );
+          }
+        }
+      }
+    };
+
     // Getter
     if (prop.getter) {
+      const getterVarBlocks = prop.getterVarBlocks ?? [];
+      this.enterScope([...this.currentFBVarBlocks, ...getterVarBlocks]);
+      this.currentScopeVarTypes.set(prop.name.toUpperCase(), prop.type.name);
       this.emitLineDirective(prop.sourceSpan.startLine);
       const getterLine = this.currentLine;
       this.emit(`${type} ${className}::get_${prop.name}() const {`);
       this.emit(`    ${type} ${prop.name}_result;`);
       this.currentFunctionName = prop.name;
+      emitAccessorLocals(getterVarBlocks);
       this.generateStatements(prop.getter);
       this.emit(`    return ${prop.name}_result;`);
       this.currentFunctionName = undefined;
       this.emit("}");
       this.emit("");
+      this.exitScope();
       this.recordLineMapping(prop.sourceSpan.startLine, getterLine);
     }
 
     // Setter
     if (prop.setter) {
+      const setterVarBlocks = prop.setterVarBlocks ?? [];
+      this.enterScope([...this.currentFBVarBlocks, ...setterVarBlocks]);
+      this.currentScopeVarTypes.set(prop.name.toUpperCase(), prop.type.name);
       this.emitLineDirective(prop.sourceSpan.startLine);
       const setterLine = this.currentLine;
       this.emit(`void ${className}::set_${prop.name}(${type} ${prop.name}) {`);
       // In setter, prop.name refers to the input parameter (no redirection)
+      emitAccessorLocals(setterVarBlocks);
       this.generateStatements(prop.setter);
       this.emit("}");
       this.emit("");
+      this.exitScope();
       this.recordLineMapping(prop.sourceSpan.startLine, setterLine);
     }
   }
@@ -2082,11 +2108,9 @@ export class CodeGenerator {
       }
     }
 
-    // Property implementations (enter FB scope so FB member types are visible)
+    // Property implementations establish the FB + accessor-local scope.
     for (const prop of fb.properties) {
-      this.enterScope(fb.varBlocks);
       this.generatePropertyImplementation(prop, fb.name);
-      this.exitScope();
     }
 
     this.currentFBName = undefined;

@@ -330,6 +330,28 @@ describe("Undefined Type Validation - Negative (must error)", () => {
     expect(result.errors[0]!.message).toMatch(/NoType/i);
   });
 
+  it("should error on undefined accessor-local variable types", () => {
+    const result = analyzeSource(`
+      FUNCTION_BLOCK MyFB
+        VAR _val : INT; END_VAR
+        PROPERTY PUBLIC Value : INT
+          GET
+            VAR local : MissingAccessorType; END_VAR
+            Value := _val;
+          END_GET
+        END_PROPERTY
+      END_FUNCTION_BLOCK
+      PROGRAM Main END_PROGRAM
+    `);
+    expect(
+      result.errors.some(
+        (error) =>
+          error.message.includes("Undefined type") &&
+          /MissingAccessorType/i.test(error.message),
+      ),
+    ).toBe(true);
+  });
+
   it("should report multiple undefined types", () => {
     const result = analyzeSource(`
       PROGRAM Main

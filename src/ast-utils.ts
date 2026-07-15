@@ -412,7 +412,9 @@ function getChildren(node: ASTNode): ASTNode[] {
     case "PropertyDeclaration": {
       const prop = node as PropertyDeclaration;
       children.push(prop.type);
+      if (prop.getterVarBlocks) children.push(...prop.getterVarBlocks);
       if (prop.getter) children.push(...prop.getter);
+      if (prop.setterVarBlocks) children.push(...prop.setterVarBlocks);
       if (prop.setter) children.push(...prop.setter);
       break;
     }

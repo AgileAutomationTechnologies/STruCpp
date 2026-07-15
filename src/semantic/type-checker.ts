@@ -178,8 +178,30 @@ export class TypeChecker {
 
         // Property getter/setter bodies
         for (const prop of fb.properties) {
-          if (prop.getter) this.checkStatements(prop.getter, scope);
-          if (prop.setter) this.checkStatements(prop.setter, scope);
+          if (prop.getter) {
+            const getterScope = this.symbolTables.getPropertyAccessorScope(
+              fb.name,
+              prop.name,
+              "GET",
+            );
+            this.checkVarBlocks(
+              prop.getterVarBlocks ?? [],
+              getterScope ?? scope,
+            );
+            this.checkStatements(prop.getter, getterScope ?? scope);
+          }
+          if (prop.setter) {
+            const setterScope = this.symbolTables.getPropertyAccessorScope(
+              fb.name,
+              prop.name,
+              "SET",
+            );
+            this.checkVarBlocks(
+              prop.setterVarBlocks ?? [],
+              setterScope ?? scope,
+            );
+            this.checkStatements(prop.setter, setterScope ?? scope);
+          }
         }
       }
     }

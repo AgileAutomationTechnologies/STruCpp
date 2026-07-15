@@ -272,6 +272,9 @@ export class SymbolTables {
   /** Map of "FBNAME.METHODNAME" to their local scopes (parent = FB scope) */
   private methodScopes: Map<string, Scope> = new Map();
 
+  /** Map of "FBNAME.PROPERTYNAME.ACCESSOR" to accessor-local scopes. */
+  private propertyAccessorScopes: Map<string, Scope> = new Map();
+
   constructor() {
     this.globalScope = new Scope("global");
     this.initializeBuiltinTypes();
@@ -390,6 +393,34 @@ export class SymbolTables {
   getMethodScope(fbName: string, methodName: string): Scope | undefined {
     const key = `${fbName.toUpperCase()}.${methodName.toUpperCase()}`;
     return this.methodScopes.get(key);
+  }
+
+  /**
+   * Create a GET/SET scope whose parent is the owning FB. Accessor-local
+   * variables therefore shadow FB members without leaking into the sibling
+   * accessor or any other POU scope.
+   */
+  createPropertyAccessorScope(
+    fbName: string,
+    propertyName: string,
+    accessor: "GET" | "SET",
+  ): Scope {
+    const fbScope = this.getFBScope(fbName);
+    const parent = fbScope ?? this.globalScope;
+    const key = `${fbName.toUpperCase()}.${propertyName.toUpperCase()}.${accessor}`;
+    const scope = new Scope(`${fbName}.${propertyName}.${accessor}`, parent);
+    this.propertyAccessorScopes.set(key, scope);
+    return scope;
+  }
+
+  /** Get the local scope for a property GET or SET accessor. */
+  getPropertyAccessorScope(
+    fbName: string,
+    propertyName: string,
+    accessor: "GET" | "SET",
+  ): Scope | undefined {
+    const key = `${fbName.toUpperCase()}.${propertyName.toUpperCase()}.${accessor}`;
+    return this.propertyAccessorScopes.get(key);
   }
 
   /**

@@ -7,7 +7,7 @@
  * Uses Chevrotain's embedded DSL for grammar definition.
  */
 
-import { CstParser, CstNode, type TokenType } from "chevrotain";
+import { CstParser, CstNode, EOF, type TokenType } from "chevrotain";
 import * as tokens from "./lexer.js";
 import { resolveErrorMessageProvider } from "./parser-error-message-provider.js";
 
@@ -337,6 +337,9 @@ export class STParser extends CstParser {
    */
   public propertyGetter = this.RULE("propertyGetter", () => {
     this.CONSUME(tokens.GET);
+    this.MANY(() => {
+      this.SUBRULE(this.propertyVarBlock);
+    });
     this.OPTION(() => {
       this.SUBRULE(this.statementList);
     });
@@ -348,10 +351,32 @@ export class STParser extends CstParser {
    */
   public propertySetter = this.RULE("propertySetter", () => {
     this.CONSUME(tokens.SET);
+    this.MANY(() => {
+      this.SUBRULE(this.propertyVarBlock);
+    });
     this.OPTION(() => {
       this.SUBRULE(this.statementList);
     });
     this.CONSUME(tokens.END_SET);
+  });
+
+  /**
+   * TwinCAT property accessors may declare variables local to the GET or SET
+   * implementation. They are intentionally limited to VAR and VAR_TEMP: FB
+   * state and accessor parameters remain declared at their normal scopes.
+   */
+  public propertyVarBlock = this.RULE("propertyVarBlock", () => {
+    this.OR({
+      DEF: [
+        { ALT: () => this.CONSUME(tokens.VAR) },
+        { ALT: () => this.CONSUME(tokens.VAR_TEMP) },
+      ],
+      IGNORE_AMBIGUITIES: true,
+    });
+    this.MANY(() => {
+      this.SUBRULE(this.varDeclaration);
+    });
+    this.CONSUME(tokens.END_VAR);
   });
 
   // ==========================================================================
@@ -994,17 +1019,20 @@ export class STParser extends CstParser {
     ) {
       return false;
     }
-    // Scan forward looking for Colon before Assign/Semicolon/LParen.
-    // 8-token cap covers all realistic label patterns:
+    // Scan forward for Colon before a statement delimiter. Qualified label
+    // groups can contain any practical number of `Enum.Member,` entries, so a
+    // fixed token cap would reject otherwise valid TwinCAT CASE branches.
+    // Examples:
     //   42:                → 2 tokens    EnumType.MEMBER:  → 4 tokens
     //   -5:                → 3 tokens    1, 2, 3, 4:       → 8 tokens
     //   1..10:             → 4 tokens
     // The AT_LEAST_ONE_SEP in caseElement handles comma-separated labels
-    // internally, so the gate only needs to detect the first label's colon.
-    for (let i = 2; i <= 8; i++) {
+    // internally, so the gate detects the branch's final colon.
+    for (let i = 2; ; i++) {
       const t = this.LA(i).tokenType;
       if (t === tokens.Colon) return true;
       if (
+        t === EOF ||
         t === tokens.Assign ||
         t === tokens.Semicolon ||
         t === tokens.LParen ||
@@ -1014,7 +1042,6 @@ export class STParser extends CstParser {
         return false;
       }
     }
-    return false;
   }
 
   private isMethodCallAhead(): boolean {
