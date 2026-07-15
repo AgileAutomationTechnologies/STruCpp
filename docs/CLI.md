@@ -23,6 +23,23 @@ export PATH="$PWD/strucpp:$PATH"
 strucpp --version
 ```
 
+### Downstream binary identity
+
+Distributors can keep the upstream `package.json` version unchanged while
+embedding a namespaced identity in a standalone bundle or executable:
+
+```bash
+STRUCPP_DISTRIBUTION_VERSION=0.5.13-tcgen.1 npm run build:pkg:win
+STRUCPP_EXPECTED_VERSION=0.5.13-tcgen.1 \
+  node scripts/smoke-test.mjs dist/bin/strucpp-win.exe
+```
+
+The override must use `<package-version>-tcgen.N`, where `N` is a positive
+downstream revision. It affects only the esbuild/pkg binary; npm package
+consumers continue to see the upstream version. Release automation should run
+`npm run verify:distribution` with `STRUCPP_RELEASE_TAG` set to the candidate
+tag; plain `vX.Y.Z` tags remain reserved for upstream.
+
 The release contains:
 
 ```

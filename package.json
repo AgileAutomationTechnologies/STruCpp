@@ -31,6 +31,8 @@
     "build:pkg:win": "npm run build:bundle && pkg dist/strucpp-bundle.cjs --no-bytecode --public-packages \"*\" --public --targets node22-win-x64 --output dist/bin/strucpp-win.exe --compress GZip",
     "build:pkg:macos": "npm run build:bundle && pkg dist/strucpp-bundle.cjs --no-bytecode --public-packages \"*\" --public --targets node22-macos-x64 --output dist/bin/strucpp-macos --compress GZip",
     "smoke:bin": "node scripts/smoke-test.mjs",
+    "verify:distribution": "node scripts/verify-distribution-version.mjs",
+    "test:distribution": "node --test scripts/verify-distribution-version.test.mjs",
     "dev": "tsc --watch",
     "test": "vitest run",
     "test:watch": "vitest",
