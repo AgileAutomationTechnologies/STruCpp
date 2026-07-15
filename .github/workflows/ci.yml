@@ -46,6 +46,9 @@ jobs:
       - name: Run TypeScript type check
         run: npm run typecheck
 
+      - name: Test downstream version and tag guards
+        run: npm run test:distribution
+
   test:
     name: Test (Node ${{ matrix.node-version }})
     runs-on: ubuntu-latest

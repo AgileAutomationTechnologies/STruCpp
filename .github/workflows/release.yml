@@ -7,8 +7,8 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to inject (e.g. 1.0.0). Leave empty for 0.1-dev.'
-        required: false
+        description: 'Qualified downstream version to inject (for example 0.5.13-tcgen.1).'
+        required: true
         type: string
 
 permissions:
@@ -23,6 +23,17 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
       - name: Determine version
         id: version
         run: |
@@ -32,10 +43,17 @@ jobs:
           elif [[ -n "${{ inputs.version }}" ]]; then
             VERSION="${{ inputs.version }}"
           else
-            VERSION="0.1-dev"
+            echo "A qualified downstream version is required." >&2
+            exit 1
           fi
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "### Version: \`${VERSION}\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify downstream version and release tag
+        env:
+          STRUCPP_DISTRIBUTION_VERSION: ${{ steps.version.outputs.version }}
+          STRUCPP_RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+        run: npm run verify:distribution
 
   # ---------------------------------------------------------------------------
   # Linux x64
