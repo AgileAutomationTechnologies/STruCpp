@@ -232,6 +232,9 @@ export class DocumentManager {
     excludeUri?: string,
   ): Array<{ source: string; fileName: string }> {
     const excludePath = excludeUri ? uriToFilePath(excludeUri) : undefined;
+    const excludePathKey = excludePath
+      ? normalizePathForComparison(excludePath)
+      : undefined;
     const sources: Array<{ source: string; fileName: string }> = [];
     const includedPaths = new Set<string>();
 
@@ -240,7 +243,7 @@ export class DocumentManager {
       if (uri === excludeUri) continue;
       if (isTestFile(state.source)) continue;
       const filePath = uriToFilePath(uri);
-      includedPaths.add(filePath);
+      includedPaths.add(normalizePathForComparison(filePath));
       sources.push({
         source: state.source,
         fileName: basename(filePath),
@@ -255,8 +258,10 @@ export class DocumentManager {
         this.discoveryCache.set(folder, discovered);
       }
       for (const filePath of discovered) {
-        if (filePath === excludePath || includedPaths.has(filePath)) continue;
-        includedPaths.add(filePath);
+        const filePathKey = normalizePathForComparison(filePath);
+        if (filePathKey === excludePathKey || includedPaths.has(filePathKey))
+          continue;
+        includedPaths.add(filePathKey);
         const source = this.workspaceFs.readFile(filePath);
         if (source === null) continue;
         if (isTestFile(source)) continue;
@@ -590,6 +595,15 @@ function uriToFilePath(uri: string): string {
   } catch {
     return uri;
   }
+}
+
+/** Compare URI/native and browser-safe slash paths without changing output. */
+function normalizePathForComparison(filePath: string): string {
+  const slashPath = filePath.replace(/\\/g, "/");
+  // Windows paths are case-insensitive. URI.fsPath may normalize the drive
+  // letter differently from the native paths returned by workspace discovery.
+  // Keep POSIX paths case-sensitive by applying this only to drive paths.
+  return /^[A-Za-z]:\//.test(slashPath) ? slashPath.toLowerCase() : slashPath;
 }
 
 /**

@@ -4,9 +4,12 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
+import { URI } from "vscode-uri";
 import { analyze } from "strucpp";
 import { DocumentManager } from "../../server/src/document-manager.js";
 import { NodeWorkspaceFs } from "../../server/src/node-workspace-fs.js";
+
+const portablePath = (value: string): string => value.replace(/\\/g, "/");
 
 describe("discoverWorkspaceLibraries", () => {
   let tempDir: string;
@@ -28,7 +31,7 @@ describe("discoverWorkspaceLibraries", () => {
     fs.writeFileSync(path.join(libsDir, "test.stlib"), "{}", "utf-8");
 
     const discovered = docManager.discoverWorkspaceLibraries();
-    expect(discovered).toContain(libsDir);
+    expect(discovered.map(portablePath)).toContain(portablePath(libsDir));
   });
 
   it("finds .stlib files in nested subdirectories", () => {
@@ -37,7 +40,7 @@ describe("discoverWorkspaceLibraries", () => {
     fs.writeFileSync(path.join(nestedDir, "mylib.stlib"), "{}", "utf-8");
 
     const discovered = docManager.discoverWorkspaceLibraries();
-    expect(discovered).toContain(nestedDir);
+    expect(discovered.map(portablePath)).toContain(portablePath(nestedDir));
   });
 
   it("deduplicates directories with multiple .stlib files", () => {
@@ -47,7 +50,7 @@ describe("discoverWorkspaceLibraries", () => {
     fs.writeFileSync(path.join(libsDir, "b.stlib"), "{}", "utf-8");
 
     const discovered = docManager.discoverWorkspaceLibraries();
-    expect(discovered).toEqual([libsDir]);
+    expect(discovered.map(portablePath)).toEqual([portablePath(libsDir)]);
   });
 
   it("returns directories from multiple locations", () => {
@@ -59,8 +62,8 @@ describe("discoverWorkspaceLibraries", () => {
     fs.writeFileSync(path.join(dir2, "b.stlib"), "{}", "utf-8");
 
     const discovered = docManager.discoverWorkspaceLibraries();
-    expect(discovered).toContain(dir1);
-    expect(discovered).toContain(dir2);
+    expect(discovered.map(portablePath)).toContain(portablePath(dir1));
+    expect(discovered.map(portablePath)).toContain(portablePath(dir2));
   });
 
   it("returns empty when no .stlib files exist", () => {
@@ -248,7 +251,7 @@ describe("buildWorkspaceSources", () => {
     );
 
     // Open the primary file
-    const primaryUri = `file://${path.join(tempDir, "main.st")}`;
+    const primaryUri = URI.file(path.join(tempDir, "main.st")).toString();
     docManager.onDocumentOpen(
       primaryUri,
       "PROGRAM Main VAR x : INT; END_VAR END_PROGRAM",
