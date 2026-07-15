@@ -3863,7 +3863,9 @@ export class CodeGenerator {
     "/": "/",
     MOD: "%",
     AND: "&",
+    AND_THEN: "&&",
     OR: "|",
+    OR_ELSE: "||",
     XOR: "^",
     "=": "==",
     "<>": "!=",
@@ -3896,6 +3898,13 @@ export class CodeGenerator {
       expr.operator === "OR" ||
       expr.operator === "XOR"
     ) {
+      return `(${left}) ${cppOp} (${right})`;
+    }
+
+    // TwinCAT AND_THEN/OR_ELSE are Boolean-only and deliberately use the
+    // native lazy C++ operators. Parenthesizing each operand preserves the ST
+    // tree even when eager and short-circuit operators are mixed.
+    if (expr.operator === "AND_THEN" || expr.operator === "OR_ELSE") {
       return `(${left}) ${cppOp} (${right})`;
     }
 

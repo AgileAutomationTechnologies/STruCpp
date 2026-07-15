@@ -1324,7 +1324,10 @@ export class STParser extends CstParser {
   public orExpression = this.RULE("orExpression", () => {
     this.SUBRULE(this.xorExpression);
     this.MANY(() => {
-      this.CONSUME(tokens.OR);
+      this.OR([
+        { ALT: () => this.CONSUME(tokens.OR) },
+        { ALT: () => this.CONSUME(tokens.OR_ELSE) },
+      ]);
       this.SUBRULE2(this.xorExpression);
     });
   });
@@ -1348,6 +1351,7 @@ export class STParser extends CstParser {
     this.MANY(() => {
       this.OR([
         { ALT: () => this.CONSUME(tokens.AND) },
+        { ALT: () => this.CONSUME(tokens.AND_THEN) },
         { ALT: () => this.CONSUME(tokens.Ampersand) },
       ]);
       this.SUBRULE2(this.comparisonExpression);

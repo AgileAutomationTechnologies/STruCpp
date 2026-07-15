@@ -46,6 +46,12 @@ end_program`;
       expect(result).toContain("END_PROGRAM");
     });
 
+    it("uppercases TwinCAT short-circuit operators", () => {
+      const source = "result := enabled and_then ready or_else fallback;";
+      const result = applyFormat(source);
+      expect(result).toContain("enabled AND_THEN ready OR_ELSE fallback");
+    });
+
     it("does not modify keywords inside strings", () => {
       const source = `PROGRAM Main
   VAR

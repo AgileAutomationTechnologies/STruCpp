@@ -252,7 +252,7 @@
       "patterns": [
         {
           "name": "keyword.operator.logical.st",
-          "match": "(?i)\\b(?:AND|OR|XOR|NOT|MOD)\\b"
+          "match": "(?i)\\b(?:AND_THEN|OR_ELSE|AND|OR|XOR|NOT|MOD)\\b"
         },
         {
           "name": "keyword.operator.assignment.ref.st",

@@ -1949,6 +1949,15 @@ export class ASTBuilder {
     let left = this.buildXorExpression(firstXorExpr);
     if (!left) return undefined;
 
+    const opTokens: Array<{ offset: number; op: BinaryOperator }> = [];
+    for (const tok of getAllTokens(children.OR)) {
+      opTokens.push({ offset: tok.startOffset ?? 0, op: "OR" });
+    }
+    for (const tok of getAllTokens(children.OR_ELSE)) {
+      opTokens.push({ offset: tok.startOffset ?? 0, op: "OR_ELSE" });
+    }
+    opTokens.sort((a, b) => a.offset - b.offset);
+
     for (let i = 1; i < xorExprs.length; i++) {
       const xorExpr = xorExprs[i];
       if (!xorExpr) continue;
@@ -1958,7 +1967,7 @@ export class ASTBuilder {
       left = {
         kind: "BinaryExpression",
         sourceSpan: nodeToSourceSpan(node),
-        operator: "OR" as BinaryOperator,
+        operator: opTokens[i - 1]?.op ?? "OR",
         left,
         right,
       };
@@ -2017,6 +2026,19 @@ export class ASTBuilder {
     let left = this.buildComparisonExpression(firstCompExpr);
     if (!left) return undefined;
 
+    const opTokens: Array<{ offset: number; op: BinaryOperator }> = [];
+    for (const tok of getAllTokens(children.AND)) {
+      opTokens.push({ offset: tok.startOffset ?? 0, op: "AND" });
+    }
+    for (const tok of getAllTokens(children.AND_THEN)) {
+      opTokens.push({ offset: tok.startOffset ?? 0, op: "AND_THEN" });
+    }
+    // Ampersand is the symbolic spelling of ordinary eager/bitwise AND.
+    for (const tok of getAllTokens(children.Ampersand)) {
+      opTokens.push({ offset: tok.startOffset ?? 0, op: "AND" });
+    }
+    opTokens.sort((a, b) => a.offset - b.offset);
+
     for (let i = 1; i < compExprs.length; i++) {
       const compExpr = compExprs[i];
       if (!compExpr) continue;
@@ -2026,7 +2048,7 @@ export class ASTBuilder {
       left = {
         kind: "BinaryExpression",
         sourceSpan: nodeToSourceSpan(node),
-        operator: "AND" as BinaryOperator,
+        operator: opTokens[i - 1]?.op ?? "AND",
         left,
         right,
       };

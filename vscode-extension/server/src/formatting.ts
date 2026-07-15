@@ -70,7 +70,7 @@ const ALL_KEYWORDS = [
   "SINT", "DINT", "LINT", "UINT", "REAL",
   "TIME", "DATE", "TASK", "WITH",
   "TRUE",
-  "FOR", "END", "VAR", "AND", "XOR", "NOT", "MOD", "REF",
+  "FOR", "END", "VAR", "AND_THEN", "OR_ELSE", "AND", "XOR", "NOT", "MOD", "REF",
   "INT", "TOD",
   "IF", "DO", "TO", "BY", "OF", "OR", "AT", "DT",
   "EXIT",

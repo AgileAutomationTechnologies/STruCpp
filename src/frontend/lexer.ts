@@ -329,6 +329,10 @@ export const TRUE = createToken({ name: "TRUE", pattern: /TRUE/i });
 export const FALSE = createToken({ name: "FALSE", pattern: /FALSE/i });
 
 // Logical operators
+// TwinCAT short-circuit extensions must be matched before their shorter IEC
+// counterparts, otherwise AND_THEN/OR_ELSE would be split at the underscore.
+export const AND_THEN = createToken({ name: "AND_THEN", pattern: /AND_THEN/i });
+export const OR_ELSE = createToken({ name: "OR_ELSE", pattern: /OR_ELSE/i });
 export const AND = createToken({ name: "AND", pattern: /AND/i });
 export const OR = createToken({ name: "OR", pattern: /OR/i });
 export const XOR = createToken({ name: "XOR", pattern: /XOR/i });
@@ -691,6 +695,8 @@ const keywordTokens = [
   RETURN,
   TRUE,
   FALSE,
+  AND_THEN,
+  OR_ELSE,
   AND,
   OR,
   XOR,
@@ -818,6 +824,8 @@ export const allTokens = [
   RETURN,
   TRUE,
   FALSE,
+  AND_THEN,
+  OR_ELSE,
   AND,
   OR,
   XOR,

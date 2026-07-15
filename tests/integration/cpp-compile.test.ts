@@ -954,6 +954,56 @@ describeIfGpp('C++ Runtime Behavior Tests', () => {
     }
   }
 
+  it('preserves TwinCAT short-circuit side effects at runtime', () => {
+    const source = `
+      FUNCTION_BLOCK Probe
+        VAR calls : INT; END_VAR
+        METHOD PUBLIC Touch : BOOL
+          calls := calls + 1;
+          Touch := TRUE;
+        END_METHOD
+      END_FUNCTION_BLOCK
+
+      PROGRAM ShortCircuitTest
+        VAR
+          probeInstance : Probe;
+          skippedAnd, evaluatedAnd, skippedOr, evaluatedOr : BOOL;
+        END_VAR
+        skippedAnd := FALSE AND_THEN probeInstance.Touch();
+        evaluatedAnd := TRUE AND_THEN probeInstance.Touch();
+        skippedOr := TRUE OR_ELSE probeInstance.Touch();
+        evaluatedOr := FALSE OR_ELSE probeInstance.Touch();
+      END_PROGRAM
+    `;
+    const result = compile(source, { noDefaultLibs: true });
+    expect(result.success, result.errors.map((error) => error.message).join('\n')).toBe(true);
+
+    const mainCode = `
+#include <cstdio>
+int main() {
+    strucpp::Program_SHORTCIRCUITTEST prog;
+    prog.run();
+    printf("calls=%d skippedAnd=%d evaluatedAnd=%d skippedOr=%d evaluatedOr=%d\\n",
+      static_cast<int>(prog.PROBEINSTANCE.CALLS.get()),
+      static_cast<int>(prog.SKIPPEDAND.get()),
+      static_cast<int>(prog.EVALUATEDAND.get()),
+      static_cast<int>(prog.SKIPPEDOR.get()),
+      static_cast<int>(prog.EVALUATEDOR.get()));
+    return 0;
+}
+`;
+    const runResult = compileAndRun(
+      result.headerCode,
+      result.cppCode,
+      mainCode,
+      'twincat_short_circuit',
+    );
+    expect(runResult.success, runResult.error).toBe(true);
+    expect(runResult.output).toContain(
+      'calls=2 skippedAnd=0 evaluatedAnd=1 skippedOr=1 evaluatedOr=1',
+    );
+  });
+
   it('should execute programs at correct task intervals with simulated time', () => {
     // Configuration with two tasks: FastTask at 50ms and SlowTask at 100ms
     // Over 250ms of simulated time:

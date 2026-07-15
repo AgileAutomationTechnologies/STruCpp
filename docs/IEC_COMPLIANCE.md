@@ -75,6 +75,7 @@ STruC++ implements the Structured Text (ST) language from IEC 61131-3. This docu
 | Arithmetic | `+`, `-`, `*`, `/`, `MOD`, `**` | Supported |
 | Comparison | `=`, `<>`, `<`, `>`, `<=`, `>=` | Supported |
 | Logical | `AND`, `OR`, `XOR`, `NOT` | Supported |
+| Short-circuit logical (TwinCAT extension) | `AND_THEN`, `OR_ELSE` | Supported for `BOOL`; right-hand operands are evaluated lazily |
 | Bitwise | `AND`, `OR`, `XOR`, `NOT` (on bit types) | Supported |
 | Bit shift | `SHL`, `SHR`, `ROL`, `ROR` | Supported |
 | Assignment | `:=` | Supported |

@@ -652,6 +652,8 @@ function getStatementKeywordCompletions(): CompletionItem[] {
     { label: "to", kind: CompletionItemKind.Keyword, sortText: "0" },
     { label: "by", kind: CompletionItemKind.Keyword, sortText: "0" },
     { label: "until", kind: CompletionItemKind.Keyword, sortText: "0" },
+    { label: "and_then", kind: CompletionItemKind.Keyword, sortText: "0" },
+    { label: "or_else", kind: CompletionItemKind.Keyword, sortText: "0" },
     // Block closers — required so `end<TAB>` works for every
     // hand-typed opener.
     { label: "end_if", kind: CompletionItemKind.Keyword, sortText: "0" },

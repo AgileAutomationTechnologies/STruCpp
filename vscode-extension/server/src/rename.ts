@@ -36,7 +36,7 @@ const IEC_KEYWORDS = new Set([
   "TYPE", "END_TYPE", "STRUCT", "END_STRUCT",
   "ARRAY", "STRING", "WSTRING",
   "TRUE", "FALSE",
-  "AND", "OR", "XOR", "NOT", "MOD",
+  "AND", "AND_THEN", "OR", "OR_ELSE", "XOR", "NOT", "MOD",
   "RETURN", "EXIT", "CONTINUE",
   "REF_TO", "REFERENCE_TO", "REF",
   "EXTENDS", "IMPLEMENTS", "ABSTRACT", "FINAL",

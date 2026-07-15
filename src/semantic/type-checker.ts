@@ -534,7 +534,30 @@ export class TypeChecker {
     if (["=", "<>", "<", ">", "<=", ">="].includes(expr.operator)) {
       type = ELEMENTARY_TYPES["BOOL"];
     }
-    // Logical operators return BOOL
+    // TwinCAT's short-circuit operators are Boolean-only. Keep them distinct
+    // from ordinary AND/OR, which also accept the IEC bit-string types.
+    else if (["AND_THEN", "OR_ELSE"].includes(expr.operator)) {
+      const leftName = typeNameUtil(leftType).toUpperCase();
+      const rightName = typeNameUtil(rightType).toUpperCase();
+      if (leftName !== "BOOL") {
+        this.addError(
+          `${expr.operator} requires BOOL operands; left operand is ${typeNameUtil(leftType)}`,
+          expr.left.sourceSpan.startLine,
+          expr.left.sourceSpan.startCol,
+          expr.left.sourceSpan.file,
+        );
+      }
+      if (rightName !== "BOOL") {
+        this.addError(
+          `${expr.operator} requires BOOL operands; right operand is ${typeNameUtil(rightType)}`,
+          expr.right.sourceSpan.startLine,
+          expr.right.sourceSpan.startCol,
+          expr.right.sourceSpan.file,
+        );
+      }
+      type = ELEMENTARY_TYPES["BOOL"];
+    }
+    // Ordinary logical/bitwise operators retain their existing semantics.
     else if (["AND", "OR", "XOR"].includes(expr.operator)) {
       type = ELEMENTARY_TYPES["BOOL"];
     }

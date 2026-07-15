@@ -102,6 +102,8 @@ describe("getCompletions", () => {
       expect(labels).toContain("FOR");
       expect(labels).toContain("WHILE");
       expect(labels).toContain("CASE");
+      expect(labels).toContain("AND_THEN");
+      expect(labels).toContain("OR_ELSE");
       // Local variables (compiler uppercases names)
       expect(labels).toContain("PLAYER");
       expect(labels).toContain("ENEMY");
