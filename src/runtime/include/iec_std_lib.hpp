@@ -1499,6 +1499,41 @@ inline IEC_ULINT MEMCPY(IEC_ULINT dest, IEC_ULINT src, std::size_t n) {
     return dest;
 }
 
+namespace detail {
+
+template<typename T>
+inline void* memory_data_pointer(T* value) noexcept {
+    return static_cast<void*>(value);
+}
+
+template<typename T>
+inline void* memory_data_pointer(IECVar<T>* value) noexcept {
+    return static_cast<void*>(value->raw_ptr());
+}
+
+template<typename T>
+inline const void* memory_data_pointer(const T* value) noexcept {
+    return static_cast<const void*>(value);
+}
+
+template<typename T>
+inline const void* memory_data_pointer(const IECVar<T>* value) noexcept {
+    return static_cast<const void*>(value->raw_ptr());
+}
+
+} // namespace detail
+
+/** Accept ADR(...)'s raw-pointer lowering without requiring an intermediate
+ * __XWORD variable. IECVar pointers are redirected to their underlying IEC
+ * value so byte operations never overwrite forcing metadata. */
+template<typename Dest, typename Src>
+inline IEC_ULINT MEMCPY(Dest* dest, const Src* src, std::size_t n) {
+    void* destAddress = detail::memory_data_pointer(dest);
+    const void* srcAddress = detail::memory_data_pointer(src);
+    std::memcpy(destAddress, srcAddress, n);
+    return static_cast<IEC_ULINT>(reinterpret_cast<std::uintptr_t>(destAddress));
+}
+
 /**
  * MEMSET(dest, value, n) - Fills n bytes at dest with the low byte of value.
  * CODESYS/TwinCAT extension. Accepts uintptr_t addresses from ADR().
@@ -1509,6 +1544,16 @@ inline IEC_ULINT MEMSET(IEC_ULINT dest, IEC_ULINT value, std::size_t n) {
     std::memset(reinterpret_cast<void*>(static_cast<std::uintptr_t>(dest)),
                 byteValue, n);
     return dest;
+}
+
+/** Raw-pointer overload for direct MEMSET(ADR(value), ...). */
+template<typename Dest>
+inline IEC_ULINT MEMSET(Dest* dest, IEC_ULINT value, std::size_t n) {
+    void* destAddress = detail::memory_data_pointer(dest);
+    const auto byteValue = static_cast<int>(
+        static_cast<std::uint64_t>(value) & static_cast<std::uint64_t>(0xFF));
+    std::memset(destAddress, byteValue, n);
+    return static_cast<IEC_ULINT>(reinterpret_cast<std::uintptr_t>(destAddress));
 }
 
 } // namespace strucpp
