@@ -163,7 +163,7 @@ describe("analyze() API", () => {
     // the analyzer must flag the missing argument instead of letting it reach
     // the C++ compiler.
     const bitCountLib = {
-      formatVersion: 1 as const,
+      formatVersion: 2 as const,
       manifest: {
         name: "oscat-basic",
         version: "1.0.0",
@@ -176,6 +176,7 @@ describe("analyze() API", () => {
           },
         ],
         functionBlocks: [],
+        interfaces: [],
         types: [],
         headers: [],
         isBuiltin: false,
@@ -203,7 +204,7 @@ describe("analyze() API", () => {
     // A library function with an optional input (default in the manifest) may
     // be called without it.
     const scaleLib = {
-      formatVersion: 1 as const,
+      formatVersion: 2 as const,
       manifest: {
         name: "demo",
         version: "1.0.0",
@@ -224,6 +225,7 @@ describe("analyze() API", () => {
           },
         ],
         functionBlocks: [],
+        interfaces: [],
         types: [],
         headers: [],
         isBuiltin: false,

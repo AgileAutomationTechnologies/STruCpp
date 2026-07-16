@@ -29,8 +29,8 @@ Distributors can keep the upstream `package.json` version unchanged while
 embedding a namespaced identity in a standalone bundle or executable:
 
 ```bash
-STRUCPP_DISTRIBUTION_VERSION=0.5.13-tcgen.3 npm run build:pkg:win
-STRUCPP_EXPECTED_VERSION=0.5.13-tcgen.3 \
+STRUCPP_DISTRIBUTION_VERSION=0.5.13-tcgen.4 npm run build:pkg:win
+STRUCPP_EXPECTED_VERSION=0.5.13-tcgen.4 \
   node scripts/smoke-test.mjs dist/bin/strucpp-win.exe
 ```
 

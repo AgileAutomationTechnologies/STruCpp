@@ -179,6 +179,9 @@ function populateManifestSymbols(
   for (const t of manifest.types) {
     ownership.set(t.name.toUpperCase(), libraryName);
   }
+  for (const iface of manifest.interfaces) {
+    ownership.set(iface.name.toUpperCase(), libraryName);
+  }
 }
 
 /**

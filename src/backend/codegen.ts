@@ -352,6 +352,9 @@ export class CodeGenerator {
   /** Set of known struct/UDT type names (upper case) */
   protected knownStructTypes: Set<string> = new Set();
 
+  /** Canonical declaration spelling for case-insensitive library type names. */
+  private libraryTypeCanonicalNames: Map<string, string> = new Map();
+
   /** Map of enum type name (upper case) → set of member names (upper case) for :: emission */
   protected enumTypeMembers: Map<string, Set<string>> = new Map();
 
@@ -364,12 +367,17 @@ export class CodeGenerator {
   /** Library FB canonical/alias map: "FBNAME.SOURCE_NAME" -> emitted field name. */
   private libraryFBFieldCanonicalNames: Map<string, string> = new Map();
 
+  /** Direction of dependency FB public fields, used for IN_OUT copy-back. */
+  private libraryFBFieldDirections: Map<string, "input" | "output" | "inout"> =
+    new Map();
+
   /** Extended type metadata for library FB fields (array dims, reference kind) */
   private libraryFBFieldTypeRefs: Map<
     string,
     {
       arrayDimensions?: Array<{ start: number; end: number }>;
       elementTypeName?: string;
+      maxLength?: number | string;
       referenceKind?: string;
     }
   > = new Map();
@@ -394,6 +402,12 @@ export class CodeGenerator {
 
   /** Map of UPPER(typeName).UPPER(methodName) → declared method name for case normalization */
   protected methodNameMap: Map<string, string> = new Map();
+
+  /** Dependency method signatures used for named argument ordering. */
+  private libraryMethodParameters: Map<
+    string,
+    Array<{ name: string; direction: string; initialValue?: string }>
+  > = new Map();
 
   /** Map of UPPER(interfaceName) → Set of UPPER(methodName) for variable/method collision detection */
   protected interfaceMethodsByInterface: Map<string, Set<string>> = new Map();
@@ -499,14 +513,16 @@ export class CodeGenerator {
     //      `IEC_<name>` wrapper (= `IEC_ENUM<name>`) so enum-typed fields
     //      have proper IECVar shape with forcing support.
     if (this.isUserDefinedType(typeName)) {
+      const canonicalTypeName =
+        this.libraryTypeCanonicalNames.get(typeName.toUpperCase()) ?? typeName;
       // Programs use Program_NAME class naming convention
       if (this.knownProgramTypes.has(typeName.toUpperCase())) {
         return `Program_${typeName}`;
       }
       if (this.enumTypeMembers.has(typeName.toUpperCase())) {
-        return `IEC_${typeName}`;
+        return `IEC_${canonicalTypeName}`;
       }
-      return typeName;
+      return canonicalTypeName;
     }
     // Elementary types: use the canonical IECVar alias map so names whose
     // wrapper isn't simply `IEC_<NAME>` (e.g. __XWORD → IEC_XWORD) resolve
@@ -639,7 +655,8 @@ export class CodeGenerator {
         // UDT: use raw struct/FB/program name
         elemType = this.knownProgramTypes.has(typeRef.name.toUpperCase())
           ? `Program_${typeRef.name}`
-          : typeRef.name;
+          : (this.libraryTypeCanonicalNames.get(typeRef.name.toUpperCase()) ??
+            typeRef.name);
       } else {
         // Primitive type: use raw type mapping (BYTE_t, INT_t, etc.)
         elemType = this.typeCodeGen.mapTypeToCpp(typeRef.name);
@@ -692,7 +709,9 @@ export class CodeGenerator {
         aliases?: string[];
         arrayDimensions?: Array<{ start: number; end: number }>;
         elementTypeName?: string;
+        maxLength?: number | string;
         referenceKind?: string;
+        direction: "input" | "output" | "inout";
       }>;
     }>,
   ): void {
@@ -711,16 +730,24 @@ export class CodeGenerator {
           const key = `${fbUpper}.${sourceName.toUpperCase()}`;
           this.libraryFBFieldTypes.set(key, f.type);
           this.libraryFBFieldCanonicalNames.set(key, f.name);
+          this.libraryFBFieldDirections.set(key, f.direction);
         }
         // Store array metadata for inline array type reconstruction
-        if (f.arrayDimensions || f.elementTypeName || f.referenceKind) {
+        if (
+          f.arrayDimensions ||
+          f.elementTypeName ||
+          f.maxLength !== undefined ||
+          f.referenceKind
+        ) {
           const ref: {
             arrayDimensions?: Array<{ start: number; end: number }>;
             elementTypeName?: string;
+            maxLength?: number | string;
             referenceKind?: string;
           } = {};
           if (f.arrayDimensions) ref.arrayDimensions = f.arrayDimensions;
           if (f.elementTypeName) ref.elementTypeName = f.elementTypeName;
+          if (f.maxLength !== undefined) ref.maxLength = f.maxLength;
           if (f.referenceKind) ref.referenceKind = f.referenceKind;
           for (const sourceName of sourceNames) {
             this.libraryFBFieldTypeRefs.set(
@@ -738,15 +765,36 @@ export class CodeGenerator {
    * struct types for known-type detection). Private — use registerLibraryArchives().
    */
   private registerLibraryTypes(
-    types: Array<{ name: string; kind: string }>,
+    types: Array<{
+      name: string;
+      kind: string;
+      enumMembers?: Array<{ name: string }>;
+    }>,
   ): void {
     for (const t of types) {
       const nameUpper = t.name.toUpperCase();
+      this.libraryTypeCanonicalNames.set(nameUpper, t.name);
       if (t.kind === "enum") {
         // Members are not available in the manifest, but we only need to
         // know the type IS an enum for :: emission in generateVariableExpression
-        if (!this.enumTypeMembers.has(nameUpper)) {
-          this.enumTypeMembers.set(nameUpper, new Set());
+        const members = new Set(
+          (t.enumMembers ?? []).map((member) => member.name.toUpperCase()),
+        );
+        this.enumTypeMembers.set(nameUpper, members);
+        for (const member of t.enumMembers ?? []) {
+          const key = member.name.toUpperCase();
+          const existing = this.enumMemberToType.get(key);
+          if (existing?.typeName && existing.typeName !== t.name) {
+            this.enumMemberToType.set(key, {
+              typeName: null,
+              conflictingTypes: [existing.typeName, t.name],
+            });
+          } else if (!existing) {
+            this.enumMemberToType.set(key, {
+              typeName: t.name,
+              conflictingTypes: [],
+            });
+          }
         }
       }
       this.knownStructTypes.add(nameUpper);
@@ -767,6 +815,7 @@ export class CodeGenerator {
             aliases?: string[];
             arrayDimensions?: Array<{ start: number; end: number }>;
             elementTypeName?: string;
+            maxLength?: number | string;
             referenceKind?: string;
           }) => {
             const entry: {
@@ -775,14 +824,18 @@ export class CodeGenerator {
               aliases?: string[];
               arrayDimensions?: Array<{ start: number; end: number }>;
               elementTypeName?: string;
+              maxLength?: number | string;
               referenceKind?: string;
+              direction: "input" | "output" | "inout";
             } = {
               name: v.name,
               type: v.type,
+              direction: "input",
             };
             if (v.aliases !== undefined) entry.aliases = [...v.aliases];
             if (v.arrayDimensions) entry.arrayDimensions = v.arrayDimensions;
             if (v.elementTypeName) entry.elementTypeName = v.elementTypeName;
+            if (v.maxLength !== undefined) entry.maxLength = v.maxLength;
             if (v.referenceKind) entry.referenceKind = v.referenceKind;
             return entry;
           };
@@ -790,15 +843,164 @@ export class CodeGenerator {
             name: fb.name,
             inputNames: fb.inputs.map((i) => i.name),
             fields: [
-              ...fb.inputs.map(mapVar),
-              ...fb.outputs.map(mapVar),
-              ...fb.inouts.map(mapVar),
+              ...fb.inputs.map((variable) => ({
+                ...mapVar(variable),
+                direction: "input" as const,
+              })),
+              ...fb.outputs.map((variable) => ({
+                ...mapVar(variable),
+                direction: "output" as const,
+              })),
+              ...fb.inouts.map((variable) => ({
+                ...mapVar(variable),
+                direction: "inout" as const,
+              })),
             ],
           };
         }),
       );
+      for (const fb of archive.manifest.functionBlocks) {
+        const fbUpper = fb.name.toUpperCase();
+        this.libraryTypeCanonicalNames.set(fbUpper, fb.name);
+        for (const method of fb.methods ?? []) {
+          const key = `${fbUpper}.${method.name.toUpperCase()}`;
+          this.methodNameMap.set(key, method.name);
+          this.libraryMethodParameters.set(
+            key,
+            method.parameters.map((parameter) => ({
+              name: parameter.name,
+              direction: parameter.direction,
+              ...(parameter.initialValue !== undefined
+                ? { initialValue: parameter.initialValue }
+                : {}),
+            })),
+          );
+        }
+        for (const property of fb.properties ?? []) {
+          const key = `${fbUpper}.${property.name.toUpperCase()}`;
+          this.propertyNameMap.set(key, property.name);
+          this.libraryFBFieldTypes.set(key, property.type);
+        }
+      }
+      for (const iface of archive.manifest.interfaces ?? []) {
+        const ifaceUpper = iface.name.toUpperCase();
+        this.libraryTypeCanonicalNames.set(ifaceUpper, iface.name);
+        this.knownInterfaceTypes.add(ifaceUpper);
+        const methods = new Set<string>();
+        for (const method of iface.methods) {
+          const key = `${ifaceUpper}.${method.name.toUpperCase()}`;
+          this.methodNameMap.set(key, method.name);
+          this.libraryMethodParameters.set(
+            key,
+            method.parameters.map((parameter) => ({
+              name: parameter.name,
+              direction: parameter.direction,
+              ...(parameter.initialValue !== undefined
+                ? { initialValue: parameter.initialValue }
+                : {}),
+            })),
+          );
+          methods.add(method.name.toUpperCase());
+        }
+        for (const parentName of iface.extends ?? []) {
+          const parentUpper = parentName.toUpperCase();
+          for (const inheritedName of this.interfaceMethodsByInterface.get(
+            parentUpper,
+          ) ?? []) {
+            const sourceKey = `${parentUpper}.${inheritedName}`;
+            const targetKey = `${ifaceUpper}.${inheritedName}`;
+            if (!this.methodNameMap.has(targetKey)) {
+              const canonical = this.methodNameMap.get(sourceKey);
+              const parameters = this.libraryMethodParameters.get(sourceKey);
+              if (canonical) this.methodNameMap.set(targetKey, canonical);
+              if (parameters)
+                this.libraryMethodParameters.set(targetKey, parameters);
+            }
+            methods.add(inheritedName);
+          }
+        }
+        this.interfaceMethodsByInterface.set(ifaceUpper, methods);
+      }
+      for (const fb of archive.manifest.functionBlocks) {
+        const targetPrefix = `${fb.name.toUpperCase()}.`;
+        const sourcePrefixes = [
+          ...(fb.extends ? [`${fb.extends.toUpperCase()}.`] : []),
+          ...(fb.implements ?? []).map(
+            (interfaceName) => `${interfaceName.toUpperCase()}.`,
+          ),
+        ];
+        for (const sourcePrefix of sourcePrefixes) {
+          for (const [sourceKey, canonical] of [
+            ...this.methodNameMap.entries(),
+          ]) {
+            if (!sourceKey.startsWith(sourcePrefix)) continue;
+            const targetKey = `${targetPrefix}${sourceKey.slice(sourcePrefix.length)}`;
+            if (!this.methodNameMap.has(targetKey)) {
+              this.methodNameMap.set(targetKey, canonical);
+              const parameters = this.libraryMethodParameters.get(sourceKey);
+              if (parameters)
+                this.libraryMethodParameters.set(targetKey, parameters);
+            }
+          }
+          for (const [sourceKey, typeName] of [
+            ...this.libraryFBFieldTypes.entries(),
+          ]) {
+            if (!sourceKey.startsWith(sourcePrefix)) continue;
+            const targetKey = `${targetPrefix}${sourceKey.slice(sourcePrefix.length)}`;
+            if (!this.libraryFBFieldTypes.has(targetKey)) {
+              this.libraryFBFieldTypes.set(targetKey, typeName);
+              const canonical =
+                this.libraryFBFieldCanonicalNames.get(sourceKey);
+              const typeRef = this.libraryFBFieldTypeRefs.get(sourceKey);
+              if (canonical)
+                this.libraryFBFieldCanonicalNames.set(targetKey, canonical);
+              const direction = this.libraryFBFieldDirections.get(sourceKey);
+              if (direction)
+                this.libraryFBFieldDirections.set(targetKey, direction);
+              if (typeRef) this.libraryFBFieldTypeRefs.set(targetKey, typeRef);
+            }
+          }
+          for (const [sourceKey, propertyName] of [
+            ...this.propertyNameMap.entries(),
+          ]) {
+            if (!sourceKey.startsWith(sourcePrefix)) continue;
+            const targetKey = `${targetPrefix}${sourceKey.slice(sourcePrefix.length)}`;
+            if (!this.propertyNameMap.has(targetKey)) {
+              this.propertyNameMap.set(targetKey, propertyName);
+            }
+          }
+        }
+      }
       if (archive.manifest.types) {
         this.registerLibraryTypes(archive.manifest.types);
+        for (const type of archive.manifest.types) {
+          for (const field of type.fields ?? []) {
+            const key = `${type.name.toUpperCase()}.${field.name.toUpperCase()}`;
+            this.libraryFBFieldTypes.set(key, field.type);
+            this.libraryFBFieldCanonicalNames.set(key, field.name);
+            if (
+              field.arrayDimensions ||
+              field.elementTypeName ||
+              field.maxLength !== undefined ||
+              field.referenceKind
+            ) {
+              this.libraryFBFieldTypeRefs.set(key, {
+                ...(field.arrayDimensions
+                  ? { arrayDimensions: field.arrayDimensions }
+                  : {}),
+                ...(field.elementTypeName
+                  ? { elementTypeName: field.elementTypeName }
+                  : {}),
+                ...(field.maxLength !== undefined
+                  ? { maxLength: field.maxLength }
+                  : {}),
+                ...(field.referenceKind
+                  ? { referenceKind: field.referenceKind }
+                  : {}),
+              });
+            }
+          }
+        }
       }
     }
   }
@@ -3990,9 +4192,6 @@ export class CodeGenerator {
    */
   private generateMethodCallExpression(expr: MethodCallExpression): string {
     const obj = this.generateExpression(expr.object);
-    const args = expr.arguments
-      .map((a) => this.generateExpression(a.value))
-      .join(", ");
     // Try type-specific resolution first (avoids collisions when two FBs share a method name)
     let resolvedName: string;
     if (expr.object.kind === "VariableExpression") {
@@ -4005,7 +4204,59 @@ export class CodeGenerator {
     } else {
       resolvedName = this.resolveMethodNameGlobal(expr.methodName);
     }
-    return `${obj}.${resolvedName}(${args})`;
+    const varType =
+      expr.object.kind === "VariableExpression"
+        ? this.currentScopeVarTypes.get(expr.object.name.toUpperCase())
+        : undefined;
+    const args = this.generateOrderedMethodArguments(
+      varType,
+      expr.methodName,
+      expr.arguments,
+    );
+    return `${obj}.${resolvedName}(${args.join(", ")})`;
+  }
+
+  private generateOrderedMethodArguments(
+    typeName: string | undefined,
+    methodName: string,
+    args: MethodCallExpression["arguments"],
+  ): string[] {
+    const generated = args.map((arg) => this.generateExpression(arg.value));
+    if (!typeName) return generated;
+    const signature = this.libraryMethodParameters.get(
+      `${typeName.toUpperCase()}.${methodName.toUpperCase()}`,
+    );
+    if (!signature) return generated;
+    const ordered: Array<string | undefined> = Array.from(
+      { length: signature.length },
+      () => undefined,
+    );
+    let positional = 0;
+    for (let index = 0; index < args.length; index++) {
+      const arg = args[index]!;
+      if (arg.name === undefined) {
+        while (ordered[positional] !== undefined) positional++;
+        ordered[positional++] = generated[index];
+        continue;
+      }
+      const parameterIndex = signature.findIndex(
+        (parameter) => parameter.name.toUpperCase() === arg.name!.toUpperCase(),
+      );
+      if (parameterIndex >= 0) ordered[parameterIndex] = generated[index];
+    }
+    return Array.from({ length: ordered.length }, (_, index) => {
+      const value = ordered[index];
+      if (value !== undefined) return value;
+      return this.libraryDefaultArgument(signature[index]?.initialValue);
+    });
+  }
+
+  private libraryDefaultArgument(value: string | undefined): string {
+    if (value === undefined) return "{}";
+    if (/^(TRUE|FALSE)$/i.test(value)) return value.toLowerCase();
+    if (/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(value)) return value;
+    if (/^'.*'$/.test(value)) return value;
+    return "{}";
   }
 
   // ===========================================================================
@@ -4388,8 +4639,10 @@ export class CodeGenerator {
       const dotIdx = expr.functionName.indexOf(".");
       const prefix = expr.functionName.substring(0, dotIdx);
       const methodName = expr.functionName.substring(dotIdx + 1);
-      const args = expr.arguments.map((arg) =>
-        this.generateExpression(arg.value),
+      const args = this.generateOrderedMethodArguments(
+        this.currentScopeVarTypes.get(prefix.toUpperCase()),
+        methodName,
+        expr.arguments,
       );
 
       // Resolve method name case from declaration
@@ -4820,7 +5073,7 @@ export class CodeGenerator {
   }
 
   /** Resolve a library compatibility spelling to its one emitted field. */
-  private resolveCanonicalMemberName(
+  protected resolveCanonicalMemberName(
     typeName: string | undefined,
     sourceName: string,
   ): string {
@@ -5264,6 +5517,25 @@ export class CodeGenerator {
       },
       `${instanceName}.ENO`,
     );
+
+    // Capture output arguments (=> syntax), excluding ENO (already handled)
+    for (const arg of filteredArgs) {
+      if (!arg.name || arg.isOutput) continue;
+      const parameterName = this.resolveCanonicalMemberName(
+        fbTypeName,
+        arg.name,
+      );
+      const direction = fbTypeName
+        ? this.libraryFBFieldDirections.get(
+            `${fbTypeName.toUpperCase()}.${parameterName.toUpperCase()}`,
+          )
+        : undefined;
+      if (direction === "inout") {
+        this.emit(
+          `${indent}${this.generateExpression(arg.value)} = ${instanceName}.${parameterName};`,
+        );
+      }
+    }
 
     // Capture output arguments (=> syntax), excluding ENO (already handled)
     for (const arg of filteredArgs) {

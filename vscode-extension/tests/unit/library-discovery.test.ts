@@ -101,7 +101,7 @@ describe("findSymbolInLibrarySources", () => {
   it("finds a FUNCTION_BLOCK declaration in library sources", () => {
     const docManager = new DocumentManager(analyze, NodeWorkspaceFs);
     docManager.setLibraryArchiveCache("mylib", {
-      formatVersion: 1,
+      formatVersion: 2,
       manifest: {
         name: "mylib",
         version: "1.0.0",
@@ -128,7 +128,7 @@ describe("findSymbolInLibrarySources", () => {
   it("finds a FUNCTION declaration", () => {
     const docManager = new DocumentManager(analyze, NodeWorkspaceFs);
     docManager.setLibraryArchiveCache("mathlib", {
-      formatVersion: 1,
+      formatVersion: 2,
       manifest: {
         name: "mathlib",
         version: "1.0.0",
@@ -160,7 +160,7 @@ describe("findSymbolInLibrarySources", () => {
   it("is case-insensitive for keyword matching", () => {
     const docManager = new DocumentManager(analyze, NodeWorkspaceFs);
     docManager.setLibraryArchiveCache("lib", {
-      formatVersion: 1,
+      formatVersion: 2,
       manifest: { name: "lib", version: "1.0.0", namespace: "lib", functions: [], functionBlocks: [], types: [] },
       headerCode: "",
       cppCode: "",
@@ -180,7 +180,7 @@ describe("resolveFileNameToUri with library sources", () => {
   it("resolves bare fileName to strucpp-lib: URI", () => {
     const docManager = new DocumentManager(analyze, NodeWorkspaceFs);
     docManager.setLibraryArchiveCache("mylib", {
-      formatVersion: 1,
+      formatVersion: 2,
       manifest: { name: "mylib", version: "1.0.0", namespace: "mylib", functions: [], functionBlocks: [], types: [] },
       headerCode: "",
       cppCode: "",
@@ -205,7 +205,7 @@ describe("clearLibraryArchiveCache", () => {
   it("clears all cached library data", () => {
     const docManager = new DocumentManager(analyze, NodeWorkspaceFs);
     docManager.setLibraryArchiveCache("lib", {
-      formatVersion: 1,
+      formatVersion: 2,
       manifest: { name: "lib", version: "1.0.0", namespace: "lib", functions: [], functionBlocks: [], types: [] },
       headerCode: "",
       cppCode: "",

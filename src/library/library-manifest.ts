@@ -26,20 +26,20 @@ export interface LibraryFunctionEntry {
   /** Return type name (concrete IEC type or generic — see above) */
   returnType: string;
   /** Parameter list */
-  parameters: Array<{
-    name: string;
-    type: string;
-    direction: "input" | "output" | "inout";
-    /** Initial (default) value of the parameter, as an ST expression string
-     *  (e.g. "255", "10.0", "T#100ms"). Present only for inputs declared with
-     *  an initial value. Semantics: an input WITH an `initialValue` is
-     *  OPTIONAL at the call site (the compiler supplies the default when the
-     *  argument is omitted); an input WITHOUT one is MANDATORY (omitting it is
-     *  a compile error). Captured by the library compiler from VAR_INPUT
-     *  initial values in the source ST — including ST produced by the CODESYS
-     *  v2/v3 importers, which preserve declarations verbatim. */
-    initialValue?: string;
-  }>;
+  parameters: Array<
+    LibraryVarType & {
+      direction: "input" | "output" | "inout";
+      /** Initial (default) value of the parameter, as an ST expression string
+       *  (e.g. "255", "10.0", "T#100ms"). Present only for inputs declared with
+       *  an initial value. Semantics: an input WITH an `initialValue` is
+       *  OPTIONAL at the call site (the compiler supplies the default when the
+       *  argument is omitted); an input WITHOUT one is MANDATORY (omitting it is
+       *  a compile error). Captured by the library compiler from VAR_INPUT
+       *  initial values in the source ST — including ST produced by the CODESYS
+       *  v2/v3 importers, which preserve declarations verbatim. */
+      initialValue?: string;
+    }
+  >;
   /** Variadic call shape. When set, `parameters` describes the leading
    *  required parameters and the function accepts any number of
    *  additional arguments matching the LAST parameter's type. `minArgs`
@@ -82,8 +82,46 @@ export interface LibraryVarType {
   arrayDimensions?: Array<{ start: number; end: number }>;
   /** Element type name for inline array types */
   elementTypeName?: string;
+  /** Declared STRING/WSTRING capacity, including named global constants. */
+  maxLength?: number | string;
   /** Reference/pointer qualifier ("pointer_to" | "reference_to") */
   referenceKind?: string;
+  /** Parameter/default initial value serialized as ST source. */
+  initialValue?: string;
+}
+
+/** Public method parameter exported by a compiled library. */
+export interface LibraryMethodParameter extends LibraryVarType {
+  direction: "input" | "output" | "inout";
+}
+
+/** Public method metadata required by dependency semantic analysis/codegen. */
+export interface LibraryMethodEntry {
+  name: string;
+  returnType?: string;
+  parameters: LibraryMethodParameter[];
+  visibility: "PUBLIC" | "PRIVATE" | "PROTECTED";
+  isAbstract: boolean;
+  isFinal: boolean;
+  isOverride: boolean;
+}
+
+/** Public property metadata required to lower dependency property access. */
+export interface LibraryPropertyEntry {
+  name: string;
+  type: string;
+  visibility: "PUBLIC" | "PRIVATE" | "PROTECTED";
+  readable: boolean;
+  writable: boolean;
+}
+
+/** Interface declaration exported by a compiled library. */
+export interface LibraryInterfaceEntry {
+  name: string;
+  extends?: string[];
+  methods: LibraryMethodEntry[];
+  documentation?: string;
+  category?: string;
 }
 
 /**
@@ -98,6 +136,12 @@ export interface LibraryFBEntry {
   outputs: LibraryVarType[];
   /** In-out variables */
   inouts: LibraryVarType[];
+  methods: LibraryMethodEntry[];
+  properties: LibraryPropertyEntry[];
+  extends?: string;
+  implements?: string[];
+  isAbstract: boolean;
+  isFinal: boolean;
   /** Block-level help text shown in editor hover dialogs. Authored in
    *  the library's `library.json` and merged into the manifest at build
    *  time (see scripts/generate-*.mjs). Optional so existing archives
@@ -125,7 +169,14 @@ export interface LibraryTypeEntry {
   /** Struct member fields (name + declared type), so a consuming compilation
    *  can type member access on a dependency struct (e.g. `MATH.PI`). Only set
    *  for `kind: "struct"`; optional for backward compatibility. */
-  fields?: Array<{ name: string; type: string }>;
+  fields?: LibraryVarType[];
+  /** Enum members in declaration order, with optional explicit ST values. */
+  enumMembers?: Array<{ name: string; value?: string }>;
+  /** Array alias dimensions. */
+  arrayDimensions?: Array<{ start: number; end: number }>;
+  elementTypeName?: string;
+  maxLength?: number | string;
+  referenceKind?: string;
   /** Type-level help text — same lifecycle as `LibraryFBEntry.documentation`,
    *  populated automatically from the structured doc-block slot in CODESYS
    *  imports (typically the type's revision-history comment for OSCAT) and
@@ -178,6 +229,8 @@ export interface LibraryManifest {
   functions: LibraryFunctionEntry[];
   /** Exported function blocks */
   functionBlocks: LibraryFBEntry[];
+  /** Exported top-level interfaces. */
+  interfaces: LibraryInterfaceEntry[];
   /** Exported types */
   types: LibraryTypeEntry[];
   /** Exported global variables (from the library's VAR_GLOBAL blocks).
@@ -188,6 +241,8 @@ export interface LibraryManifest {
   headers: string[];
   /** Whether this is a built-in C++ runtime library */
   isBuiltin: boolean;
+  /** Allowlisted compiler/runtime features required by this archive. */
+  runtimeCapabilities?: string[];
   /** Original ST source files (for ST libraries) */
   sourceFiles?: string[];
 }
@@ -286,7 +341,7 @@ export interface LibraryCompileResult {
  */
 export interface StlibArchive {
   /** Format version for forward compatibility */
-  formatVersion: 1;
+  formatVersion: 2;
   /** Library metadata (function/FB/type signatures for symbol registration) */
   manifest: LibraryManifest;
   /** Per-symbol chunks. One entry per top-level declaration emitted

@@ -39,6 +39,25 @@ import { walkAST } from "./ast-utils.js";
 import { registerLibrarySymbols } from "./library/library-loader.js";
 import type { StlibArchive } from "./library/library-manifest.js";
 import { annotateErrorsWithPouContext } from "./diagnostic-pou-context.js";
+export type {
+  LibraryProfileEntry,
+  LibraryProfileManifest,
+  LoadedLibraryProfile,
+} from "./library/library-profile.js";
+export {
+  parseLibraryProfile,
+  validateLibraryProfileArchives,
+} from "./library/library-profile.js";
+export type {
+  BeckhoffVirtualFixture,
+  BeckhoffVirtualFaultRule,
+  BeckhoffVirtualResource,
+  BeckhoffVirtualResourceKind,
+} from "./testing/virtual-fixture.js";
+export {
+  BECKHOFF_VIRTUAL_RESOURCE_KINDS,
+  parseBeckhoffVirtualFixture,
+} from "./testing/virtual-fixture.js";
 
 /**
  * Default compilation options

@@ -38,10 +38,16 @@ function parseAST(source: string) {
 
 describe("type-utils", () => {
   describe("ELEMENTARY_TYPES", () => {
-    it("should define all 24 types (22 canonical + TOD + DT aliases)", () => {
-      // 22 canonical = 21 standard elementary types + __XWORD (platform-width
-      // address type); plus the TOD and DT alias entries.
-      expect(Object.keys(ELEMENTARY_TYPES)).toHaveLength(24);
+    it("defines the complete canonical and alias registry", () => {
+      // 28 canonical entries plus the TIME_OF_DAY, LTIME_OF_DAY,
+      // DATE_AND_TIME, and LDATE_AND_TIME long-form aliases.
+      expect(Object.keys(ELEMENTARY_TYPES)).toHaveLength(32);
+      expect(ELEMENTARY_TYPES).toHaveProperty("LTIME");
+      expect(ELEMENTARY_TYPES).toHaveProperty("LDATE");
+      expect(ELEMENTARY_TYPES).toHaveProperty("LTOD");
+      expect(ELEMENTARY_TYPES).toHaveProperty("LDT");
+      expect(ELEMENTARY_TYPES).toHaveProperty("CHAR");
+      expect(ELEMENTARY_TYPES).toHaveProperty("WCHAR");
     });
 
     it("should have correct sizes for integer types", () => {

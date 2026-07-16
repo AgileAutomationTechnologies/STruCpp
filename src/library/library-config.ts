@@ -74,6 +74,8 @@ export interface LibraryConfig {
   description?: string;
   /** Marks the library as a built-in runtime library (vs. user-installed). */
   isBuiltin?: boolean;
+  /** Runtime services that consumers must provide for executable behavior. */
+  runtimeCapabilities?: string[];
   /** Compile-time integer constants the library's ST sources reference
    *  (e.g. OSCAT's STRING_LENGTH and LIST_LENGTH). Forwarded to
    *  compileStlib's `globalConstants` option. */
@@ -132,6 +134,17 @@ function validateLibraryConfig(raw: unknown, path: string): LibraryConfig {
   if (typeof obj.displayName === "string") config.displayName = obj.displayName;
   if (typeof obj.description === "string") config.description = obj.description;
   if (typeof obj.isBuiltin === "boolean") config.isBuiltin = obj.isBuiltin;
+  if (obj.runtimeCapabilities !== undefined) {
+    if (
+      !Array.isArray(obj.runtimeCapabilities) ||
+      obj.runtimeCapabilities.some((value) => typeof value !== "string")
+    ) {
+      throw new Error(
+        `${path}: "runtimeCapabilities" must be an array of strings`,
+      );
+    }
+    config.runtimeCapabilities = [...(obj.runtimeCapabilities as string[])];
+  }
   if (typeof obj.codesysSource === "string")
     config.codesysSource = obj.codesysSource;
 

@@ -43,6 +43,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdlib>
+#include <cstdint>
 #include <cstring>
 #include <type_traits>
 
@@ -1495,6 +1496,18 @@ inline IEC_UDINT IEC_SIZEOF(const T&) noexcept {
 inline IEC_ULINT MEMCPY(IEC_ULINT dest, IEC_ULINT src, std::size_t n) {
     std::memcpy(reinterpret_cast<void*>(static_cast<std::uintptr_t>(dest)),
                 reinterpret_cast<const void*>(static_cast<std::uintptr_t>(src)), n);
+    return dest;
+}
+
+/**
+ * MEMSET(dest, value, n) - Fills n bytes at dest with the low byte of value.
+ * CODESYS/TwinCAT extension. Accepts uintptr_t addresses from ADR().
+ */
+inline IEC_ULINT MEMSET(IEC_ULINT dest, IEC_ULINT value, std::size_t n) {
+    const auto byteValue = static_cast<int>(
+        static_cast<std::uint64_t>(value) & static_cast<std::uint64_t>(0xFF));
+    std::memset(reinterpret_cast<void*>(static_cast<std::uintptr_t>(dest)),
+                byteValue, n);
     return dest;
 }
 

@@ -761,7 +761,7 @@ describe("Test Main Generator", () => {
         ast: ast as any,
         libraryArchives: [
           {
-            formatVersion: 1,
+            formatVersion: 2,
             manifest: {
               name: "semaphoreLib",
               version: "1.0.0",

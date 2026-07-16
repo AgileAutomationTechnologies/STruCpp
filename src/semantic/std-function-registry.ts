@@ -929,6 +929,23 @@ export class StdFunctionRegistry {
       category: "system",
     });
 
+    // MEMSET(dest, value, n) -> ULINT (CODESYS/TwinCAT memset)
+    this.register({
+      name: "MEMSET",
+      cppName: "MEMSET",
+      returnConstraint: "specific",
+      returnMatchesFirstParam: false,
+      specificReturnType: "ULINT",
+      params: [
+        { name: "DEST", constraint: "ANY", isByRef: false },
+        { name: "VALUE", constraint: "ANY_INT", isByRef: false },
+        { name: "N", constraint: "ANY_INT", isByRef: false },
+      ],
+      isVariadic: false,
+      isConversion: false,
+      category: "system",
+    });
+
     // LOWER_BOUND(arr, dim) -> DINT (lower bound of array dimension)
     this.register({
       name: "LOWER_BOUND",

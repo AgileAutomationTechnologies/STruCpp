@@ -38,6 +38,7 @@ export function getBuiltinStdlibManifest(): LibraryManifest {
       })),
     })),
     functionBlocks: [],
+    interfaces: [],
     types: [],
     headers: [
       "iec_std_lib.hpp",

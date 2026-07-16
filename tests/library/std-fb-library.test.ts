@@ -373,7 +373,7 @@ describe("Standard FB Library", () => {
 
   describe("pre-compiled .stlib archive", () => {
     it("should return a valid StlibArchive", () => {
-      expect(stlibArchive.formatVersion).toBe(1);
+      expect(stlibArchive.formatVersion).toBe(2);
       expect(stlibArchive.manifest.name).toBe("iec-standard-fb");
       expect(stlibArchive.manifest.version).toBe("1.1.0");
       expect(stlibArchive.manifest.namespace).toBe("strucpp");
@@ -478,7 +478,7 @@ describe("Standard FB Library", () => {
       expect(ctu).toBeDefined();
       expect(ctu!.inputs).toEqual([
         { name: "CU", type: "BOOL" },
-        { name: "R", type: "BOOL" },
+        { name: "R", type: "BOOL", aliases: ["RESET"] },
         { name: "PV", type: "INT" },
       ]);
       expect(ctu!.outputs).toEqual([

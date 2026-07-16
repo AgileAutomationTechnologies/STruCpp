@@ -98,6 +98,17 @@ export interface FunctionBlockSymbol extends BaseSymbol {
   outputs: VariableSymbol[];
   inouts: VariableSymbol[];
   locals: VariableSymbol[];
+  /** Dependency method signatures keyed by upper-case method name. */
+  methodSignatures?: Map<
+    string,
+    { returnType?: string; parameters: VariableSymbol[] }
+  >;
+}
+
+/** Callable method surface reconstructed from a dependency archive. */
+export interface DependencyMethodSignature {
+  returnType?: string;
+  parameters: VariableSymbol[];
 }
 
 export interface FunctionBlockVariableResolution {
@@ -363,6 +374,12 @@ export class SymbolTables {
   /** Map of "FBNAME.PROPERTYNAME.ACCESSOR" to accessor-local scopes. */
   private propertyAccessorScopes: Map<string, Scope> = new Map();
 
+  /** Public interface methods keyed by upper-case interface and method name. */
+  public readonly interfaceMethodSignatures: Map<
+    string,
+    Map<string, DependencyMethodSignature>
+  > = new Map();
+
   constructor() {
     this.globalScope = new Scope("global");
     this.initializeBuiltinTypes();
@@ -372,32 +389,7 @@ export class SymbolTables {
    * Initialize built-in IEC types.
    */
   private initializeBuiltinTypes(): void {
-    const builtinTypes = [
-      "BOOL",
-      "BYTE",
-      "WORD",
-      "DWORD",
-      "LWORD",
-      "SINT",
-      "INT",
-      "DINT",
-      "LINT",
-      "USINT",
-      "UINT",
-      "UDINT",
-      "ULINT",
-      "__XWORD",
-      "REAL",
-      "LREAL",
-      "TIME",
-      "DATE",
-      "TIME_OF_DAY",
-      "TOD",
-      "DATE_AND_TIME",
-      "DT",
-      "STRING",
-      "WSTRING",
-    ];
+    const builtinTypes = Object.keys(ELEMENTARY_TYPES);
 
     for (const typeName of builtinTypes) {
       this.globalScope.define({

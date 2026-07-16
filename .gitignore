@@ -16,6 +16,7 @@ build/
 # CI rebuilds them before tests via vitest globalSetup; release jobs
 # rebuild them as part of `npm run build`.
 libs/*.stlib
+libs/beckhoff-virtual/*.stlib
 # iec-types.json is a similar build artefact: derived from
 # `src/semantic/iec-types-data.ts` by `scripts/build-iec-types-json.mjs`,
 # so tracking it would just produce churn whenever the metadata changes.

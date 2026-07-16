@@ -42,6 +42,7 @@ describe("StdFunctionRegistry", () => {
       expect(registry.isStandardFunction("SIN")).toBe(true);
       expect(registry.isStandardFunction("ADD")).toBe(true);
       expect(registry.isStandardFunction("LEN")).toBe(true);
+      expect(registry.isStandardFunction("MEMSET")).toBe(true);
     });
 
     it("should recognize conversion functions", () => {
@@ -267,6 +268,21 @@ describe("StdFunctionRegistry", () => {
         expect(desc).toBeDefined();
         expect(desc!.category).toBe("time");
       }
+    });
+  });
+
+  describe("system functions", () => {
+    it("should expose MEMSET as a three-argument memory intrinsic", () => {
+      const desc = registry.lookup("MEMSET");
+      expect(desc).toBeDefined();
+      expect(desc!.cppName).toBe("MEMSET");
+      expect(desc!.category).toBe("system");
+      expect(desc!.specificReturnType).toBe("ULINT");
+      expect(desc!.params.map((param) => param.name)).toEqual([
+        "DEST",
+        "VALUE",
+        "N",
+      ]);
     });
   });
 

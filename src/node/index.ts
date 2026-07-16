@@ -30,6 +30,14 @@ export {
 // Filesystem-backed library config
 export { loadLibraryConfig } from "./library-config.js";
 
+// Locked bundled-library profiles
+export { loadLibraryProfile } from "./library-profile.js";
+export {
+  generateBeckhoffVirtualFixtureHeader,
+  loadBeckhoffVirtualFixture,
+  type LoadedBeckhoffVirtualFixture,
+} from "./virtual-fixture.js";
+
 // Filesystem-backed source discovery
 export { discoverSTFiles } from "./library-utils.js";
 

@@ -151,7 +151,7 @@ jobs:
 
       - name: Bundle
         env:
-          STRUCPP_DISTRIBUTION_VERSION: 0.5.13-tcgen.3
+          STRUCPP_DISTRIBUTION_VERSION: 0.5.13-tcgen.4
         run: npm run build:bundle
 
       - name: Build standalone binary
@@ -159,5 +159,5 @@ jobs:
 
       - name: Smoke-test binary
         env:
-          STRUCPP_EXPECTED_VERSION: 0.5.13-tcgen.3
+          STRUCPP_EXPECTED_VERSION: 0.5.13-tcgen.4
         run: node scripts/smoke-test.mjs dist/bin/strucpp

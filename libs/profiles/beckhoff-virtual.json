@@ -1,0 +1,139 @@
+{
+  "schemaVersion": 1,
+  "name": "beckhoff-virtual",
+  "runtimeProfile": "beckhoff-virtual-v1",
+  "coverageCatalog": "../sources/beckhoff-virtual-core/beckhoff-api-catalog.json",
+  "excludedLibraries": [
+    "additional-function-blocks"
+  ],
+  "libraries": [
+    {
+      "name": "iec-standard-fb",
+      "path": "iec-standard-fb.stlib"
+    },
+    {
+      "name": "beckhoff-virtual-core",
+      "path": "beckhoff-virtual/beckhoff-virtual-core.stlib"
+    },
+    {
+      "name": "beckhoff-tc2-controllertoolbox",
+      "path": "beckhoff-virtual/beckhoff-tc2-controllertoolbox.stlib"
+    },
+    {
+      "name": "beckhoff-tc2-dataexchange",
+      "path": "beckhoff-virtual/beckhoff-tc2-dataexchange.stlib"
+    },
+    {
+      "name": "beckhoff-tc2-database",
+      "path": "beckhoff-virtual/beckhoff-tc2-database.stlib"
+    },
+    {
+      "name": "beckhoff-tc2-ethercat",
+      "path": "beckhoff-virtual/beckhoff-tc2-ethercat.stlib"
+    },
+    {
+      "name": "beckhoff-tc2-ftp",
+      "path": "beckhoff-virtual/beckhoff-tc2-ftp.stlib"
+    },
+    {
+      "name": "beckhoff-tc2-iofunctions",
+      "path": "beckhoff-virtual/beckhoff-tc2-iofunctions.stlib"
+    },
+    {
+      "name": "beckhoff-tc2-mc2",
+      "path": "beckhoff-virtual/beckhoff-tc2-mc2.stlib"
+    },
+    {
+      "name": "beckhoff-tc2-mc2-camming",
+      "path": "beckhoff-virtual/beckhoff-tc2-mc2-camming.stlib"
+    },
+    {
+      "name": "beckhoff-tc2-mc2-flyingsaw",
+      "path": "beckhoff-virtual/beckhoff-tc2-mc2-flyingsaw.stlib"
+    },
+    {
+      "name": "beckhoff-tc2-mc2-xfc",
+      "path": "beckhoff-virtual/beckhoff-tc2-mc2-xfc.stlib"
+    },
+    {
+      "name": "beckhoff-tc2-math",
+      "path": "beckhoff-virtual/beckhoff-tc2-math.stlib"
+    },
+    {
+      "name": "beckhoff-tc2-modbusrtu",
+      "path": "beckhoff-virtual/beckhoff-tc2-modbusrtu.stlib"
+    },
+    {
+      "name": "beckhoff-tc2-modbussrv",
+      "path": "beckhoff-virtual/beckhoff-tc2-modbussrv.stlib"
+    },
+    {
+      "name": "beckhoff-tc2-serialcom",
+      "path": "beckhoff-virtual/beckhoff-tc2-serialcom.stlib"
+    },
+    {
+      "name": "beckhoff-tc2-smtp",
+      "path": "beckhoff-virtual/beckhoff-tc2-smtp.stlib"
+    },
+    {
+      "name": "beckhoff-tc2-system",
+      "path": "beckhoff-virtual/beckhoff-tc2-system.stlib"
+    },
+    {
+      "name": "beckhoff-tc2-tcpip",
+      "path": "beckhoff-virtual/beckhoff-tc2-tcpip.stlib"
+    },
+    {
+      "name": "beckhoff-tc2-utilities",
+      "path": "beckhoff-virtual/beckhoff-tc2-utilities.stlib"
+    },
+    {
+      "name": "beckhoff-tc3-dynamicmemory",
+      "path": "beckhoff-virtual/beckhoff-tc3-dynamicmemory.stlib"
+    },
+    {
+      "name": "beckhoff-tc3-eventlogger",
+      "path": "beckhoff-virtual/beckhoff-tc3-eventlogger.stlib"
+    },
+    {
+      "name": "beckhoff-tc3-ftp",
+      "path": "beckhoff-virtual/beckhoff-tc3-ftp.stlib"
+    },
+    {
+      "name": "beckhoff-tc3-filter",
+      "path": "beckhoff-virtual/beckhoff-tc3-filter.stlib"
+    },
+    {
+      "name": "beckhoff-tc3-ipcdiag",
+      "path": "beckhoff-virtual/beckhoff-tc3-ipcdiag.stlib"
+    },
+    {
+      "name": "beckhoff-tc3-iolink",
+      "path": "beckhoff-virtual/beckhoff-tc3-iolink.stlib"
+    },
+    {
+      "name": "beckhoff-tc3-iotbase",
+      "path": "beckhoff-virtual/beckhoff-tc3-iotbase.stlib"
+    },
+    {
+      "name": "beckhoff-tc3-jsonxml",
+      "path": "beckhoff-virtual/beckhoff-tc3-jsonxml.stlib"
+    },
+    {
+      "name": "beckhoff-tc3-plcopen-opcua",
+      "path": "beckhoff-virtual/beckhoff-tc3-plcopen-opcua.stlib"
+    },
+    {
+      "name": "beckhoff-tc3-packml-v3",
+      "path": "beckhoff-virtual/beckhoff-tc3-packml-v3.stlib"
+    },
+    {
+      "name": "beckhoff-tc3-s7comm",
+      "path": "beckhoff-virtual/beckhoff-tc3-s7comm.stlib"
+    },
+    {
+      "name": "beckhoff-tc3-weighing",
+      "path": "beckhoff-virtual/beckhoff-tc3-weighing.stlib"
+    }
+  ]
+}

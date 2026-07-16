@@ -32,49 +32,99 @@
       "documentation": "The semaphore provides a mechanism to allow software elements mutually exclusive access to certain resources."
     },
     "CTU": {
-      "documentation": "The up-counter can be used to signal when a count has reached a maximum value."
+      "documentation": "The up-counter can be used to signal when a count has reached a maximum value.",
+      "variableAliases": {
+        "R": ["RESET"]
+      }
     },
     "CTU_DINT": {
-      "documentation": "The up-counter can be used to signal when a count has reached a maximum value."
+      "documentation": "The up-counter can be used to signal when a count has reached a maximum value.",
+      "variableAliases": {
+        "R": ["RESET"]
+      }
     },
     "CTU_LINT": {
-      "documentation": "The up-counter can be used to signal when a count has reached a maximum value."
+      "documentation": "The up-counter can be used to signal when a count has reached a maximum value.",
+      "variableAliases": {
+        "R": ["RESET"]
+      }
     },
     "CTU_UDINT": {
-      "documentation": "The up-counter can be used to signal when a count has reached a maximum value."
+      "documentation": "The up-counter can be used to signal when a count has reached a maximum value.",
+      "variableAliases": {
+        "R": ["RESET"]
+      }
     },
     "CTU_ULINT": {
-      "documentation": "The up-counter can be used to signal when a count has reached a maximum value."
+      "documentation": "The up-counter can be used to signal when a count has reached a maximum value.",
+      "variableAliases": {
+        "R": ["RESET"]
+      }
     },
     "CTD": {
-      "documentation": "The down-counter can be used to signal when a count has reached zero, on counting down from a preset value."
+      "documentation": "The down-counter can be used to signal when a count has reached zero, on counting down from a preset value.",
+      "variableAliases": {
+        "LD": ["LOAD"]
+      }
     },
     "CTD_DINT": {
-      "documentation": "The down-counter can be used to signal when a count has reached zero, on counting down from a preset value."
+      "documentation": "The down-counter can be used to signal when a count has reached zero, on counting down from a preset value.",
+      "variableAliases": {
+        "LD": ["LOAD"]
+      }
     },
     "CTD_LINT": {
-      "documentation": "The down-counter can be used to signal when a count has reached zero, on counting down from a preset value."
+      "documentation": "The down-counter can be used to signal when a count has reached zero, on counting down from a preset value.",
+      "variableAliases": {
+        "LD": ["LOAD"]
+      }
     },
     "CTD_UDINT": {
-      "documentation": "The down-counter can be used to signal when a count has reached zero, on counting down from a preset value."
+      "documentation": "The down-counter can be used to signal when a count has reached zero, on counting down from a preset value.",
+      "variableAliases": {
+        "LD": ["LOAD"]
+      }
     },
     "CTD_ULINT": {
-      "documentation": "The down-counter can be used to signal when a count has reached zero, on counting down from a preset value."
+      "documentation": "The down-counter can be used to signal when a count has reached zero, on counting down from a preset value.",
+      "variableAliases": {
+        "LD": ["LOAD"]
+      }
     },
     "CTUD": {
-      "documentation": "The up-down counter has two inputs CU and CD. It can be used to both count up on one input and down on the other."
+      "documentation": "The up-down counter has two inputs CU and CD. It can be used to both count up on one input and down on the other.",
+      "variableAliases": {
+        "R": ["RESET"],
+        "LD": ["LOAD"]
+      }
     },
     "CTUD_DINT": {
-      "documentation": "The up-down counter has two inputs CU and CD. It can be used to both count up on one input and down on the other."
+      "documentation": "The up-down counter has two inputs CU and CD. It can be used to both count up on one input and down on the other.",
+      "variableAliases": {
+        "R": ["RESET"],
+        "LD": ["LOAD"]
+      }
     },
     "CTUD_LINT": {
-      "documentation": "The up-down counter has two inputs CU and CD. It can be used to both count up on one input and down on the other."
+      "documentation": "The up-down counter has two inputs CU and CD. It can be used to both count up on one input and down on the other.",
+      "variableAliases": {
+        "R": ["RESET"],
+        "LD": ["LOAD"]
+      }
     },
     "CTUD_UDINT": {
-      "documentation": "The up-down counter has two inputs CU and CD. It can be used to both count up on one input and down on the other."
+      "documentation": "The up-down counter has two inputs CU and CD. It can be used to both count up on one input and down on the other.",
+      "variableAliases": {
+        "R": ["RESET"],
+        "LD": ["LOAD"]
+      }
     },
     "CTUD_ULINT": {
-      "documentation": "The up-down counter has two inputs CU and CD. It can be used to both count up on one input and down on the other."
+      "documentation": "The up-down counter has two inputs CU and CD. It can be used to both count up on one input and down on the other.",
+      "variableAliases": {
+        "R": ["RESET"],
+        "LD": ["LOAD"]
+      }
     },
     "TON": {
       "documentation": "The on-delay timer can be used to delay setting an output true, for fixed period after an input becomes true."

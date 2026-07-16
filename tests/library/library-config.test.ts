@@ -38,7 +38,7 @@ function makeArchive(opts: {
   fns?: Array<{ name: string; returnType: string }>;
 }): StlibArchive {
   return {
-    formatVersion: 1,
+    formatVersion: 2,
     manifest: {
       name: "test",
       version: "0.0.0",
@@ -53,7 +53,12 @@ function makeArchive(opts: {
         inputs: [],
         outputs: [],
         inouts: [],
+        methods: [],
+        properties: [],
+        isAbstract: false,
+        isFinal: false,
       })),
+      interfaces: [],
       types: [],
       headers: [],
       isBuiltin: false,

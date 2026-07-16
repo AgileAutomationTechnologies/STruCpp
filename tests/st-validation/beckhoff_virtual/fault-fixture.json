@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "profile": "beckhoff-virtual-v1",
+  "resources": [
+    {
+      "kind": "motionAxis",
+      "key": "fault-axis",
+      "ads": 2002,
+      "position": 7.0
+    }
+  ],
+  "faults": [
+    {
+      "target": "Tc2_MC2.MC_MoveAbsolute",
+      "resourceKey": "axis:2002",
+      "callNumber": 1,
+      "delayScans": 0,
+      "errorId": 4026531845
+    }
+  ]
+}

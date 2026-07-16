@@ -49,7 +49,7 @@ if (compileResult.cppCode.length === 0) {
 //    archive pushed via the loadStlibBuffer RPC).
 const archive = strucpp.loadStlibFromString(
   JSON.stringify({
-    formatVersion: 1,
+    formatVersion: 2,
     manifest: {
       name: "smoke",
       version: "0.0.1",

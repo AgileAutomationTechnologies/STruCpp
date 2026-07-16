@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "profile": "beckhoff-virtual-v1",
+  "scanPeriodNanoseconds": 1000000,
+  "resources": [
+    {
+      "kind": "motionAxis",
+      "key": "main-axis",
+      "ads": 1001,
+      "position": 2.5,
+      "velocity": 0,
+      "enabled": false
+    },
+    {
+      "kind": "sandboxFile",
+      "key": "C:\\virtual\\input.txt",
+      "content": "hello"
+    }
+  ],
+  "faults": []
+}

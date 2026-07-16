@@ -759,9 +759,28 @@ export class TypeChecker {
     if (!objTypeName) return undefined;
 
     // Find the FB declaration and the method
-    const fb = this.ast.functionBlocks.find(
-      (f) => f.name.toUpperCase() === objTypeName.toUpperCase(),
-    );
+    const fb =
+      this.ast.functionBlocks.find(
+        (f) => f.name.toUpperCase() === objTypeName.toUpperCase(),
+      ) ?? this.symbolTables.lookupFunctionBlock(objTypeName)?.declaration;
+    const dependencyMethod = this.symbolTables
+      .lookupFunctionBlock(objTypeName)
+      ?.methodSignatures?.get(expr.methodName.toUpperCase());
+    if (dependencyMethod?.returnType) {
+      const registered = this.symbolTables.lookupType(
+        dependencyMethod.returnType,
+      )?.resolvedType;
+      const retType =
+        registered ??
+        ELEMENTARY_TYPES[dependencyMethod.returnType.toUpperCase()] ??
+        ({
+          typeKind: "elementary",
+          name: dependencyMethod.returnType,
+          sizeBits: 0,
+        } as ElementaryType);
+      expr.resolvedType = retType;
+      return retType;
+    }
     if (fb) {
       const method = fb.methods.find(
         (m) => m.name.toUpperCase() === expr.methodName.toUpperCase(),

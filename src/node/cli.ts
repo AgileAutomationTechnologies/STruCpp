@@ -45,6 +45,12 @@ import {
   type DiagnosticSource,
 } from "../diagnostic-formatter.js";
 import { discoverStlibs, loadStlibFromFile } from "./library-loader.js";
+import { loadLibraryProfile } from "./library-profile.js";
+import {
+  generateBeckhoffVirtualFixtureHeader,
+  loadBeckhoffVirtualFixture,
+} from "./virtual-fixture.js";
+import { parseBeckhoffVirtualFixture } from "../testing/virtual-fixture.js";
 import { discoverSTFiles } from "./library-utils.js";
 import { generateReplMain } from "../backend/repl-main-gen.js";
 import { parseTestFile } from "../testing/test-parser.js";
@@ -82,6 +88,8 @@ interface CLIOptions {
   cc: string;
   cxxFlags: string;
   libraryPaths: string[];
+  libraryProfile?: string;
+  virtualFixture?: string;
   noDefaultLibs: boolean;
   compileLib: boolean;
   libName?: string;
@@ -215,6 +223,14 @@ function parseArgs(args: string[]): CLIOptions {
       if (nextArg !== undefined) {
         options.libraryPaths.push(nextArg);
       }
+    } else if (arg === "--library-profile") {
+      i++;
+      const nextArg = args[i];
+      if (nextArg !== undefined) options.libraryProfile = nextArg;
+    } else if (arg === "--virtual-fixture") {
+      i++;
+      const nextArg = args[i];
+      if (nextArg !== undefined) options.virtualFixture = nextArg;
     } else if (arg === "--no-default-libs") {
       options.noDefaultLibs = true;
     } else if (arg === "--compile-lib") {
@@ -314,6 +330,8 @@ Options:
   --cc <path>               Custom C compiler path (default: cc)
   --cxx-flags <flags>       Extra C++ compiler flags
   -L, --lib-path <path>     Library search path (repeatable)
+  --library-profile <name>  Load a locked bundled library profile
+  --virtual-fixture <json>  Reset a Beckhoff virtual fixture before each test
   --no-default-libs         Do not auto-add bundled library paths
   -D, --define NAME=VALUE   Define a global constant (repeatable)
   -v, --version             Show version
@@ -458,6 +476,21 @@ function getEffectiveLibraryPaths(options: CLIOptions): string[] {
   return paths;
 }
 
+function loadCompileLibraries(
+  options: CLIOptions,
+): import("../library/library-manifest.js").StlibArchive[] {
+  if (options.libraryProfile) {
+    const loaded = loadLibraryProfile(options.libraryProfile).archives;
+    for (const path of options.libraryPaths) {
+      loaded.push(...discoverStlibs(resolve(path)));
+    }
+    return loaded;
+  }
+  return getEffectiveLibraryPaths(options).flatMap((path) =>
+    discoverStlibs(path),
+  );
+}
+
 /**
  * Library compilation mode: compile ST sources into a single .stlib archive.
  */
@@ -594,6 +627,29 @@ function compileLibraryMode(options: CLIOptions): void {
 function runTestMode(options: CLIOptions): void {
   ensureCompilersAvailable(options, false);
 
+  let virtualFixture:
+    | import("../testing/virtual-fixture.js").BeckhoffVirtualFixture
+    | undefined;
+  try {
+    if (options.virtualFixture) {
+      virtualFixture = loadBeckhoffVirtualFixture(
+        resolve(options.virtualFixture),
+      ).fixture;
+    } else if (options.libraryProfile === "beckhoff-virtual") {
+      virtualFixture = parseBeckhoffVirtualFixture({
+        schemaVersion: 1,
+        profile: "beckhoff-virtual-v1",
+        resources: [],
+        faults: [],
+      });
+    }
+  } catch (error) {
+    console.error(
+      `Error: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    process.exit(1);
+  }
+
   if (options.inputs.length === 0) {
     console.error("Error: No source files specified for testing");
     console.error("Usage: strucpp <source.st> --test <test.st>");
@@ -625,7 +681,6 @@ function runTestMode(options: CLIOptions): void {
     }
   }
 
-  const effectiveLibPaths = getEffectiveLibraryPaths(options);
   const compileOptions: Partial<CompileOptions> = {
     headerFileName: "generated.hpp",
     fileName: basename(inputPath),
@@ -634,11 +689,8 @@ function runTestMode(options: CLIOptions): void {
   if (additionalSources.length > 0) {
     compileOptions.additionalSources = additionalSources;
   }
-  if (effectiveLibPaths.length > 0) {
-    compileOptions.libraries = effectiveLibPaths.flatMap((p) =>
-      discoverStlibs(p),
-    );
-  }
+  const libraries = loadCompileLibraries(options);
+  if (libraries.length > 0) compileOptions.libraries = libraries;
   if (Object.keys(options.defines).length > 0) {
     compileOptions.globalConstants = options.defines;
   }
@@ -715,6 +767,9 @@ function runTestMode(options: CLIOptions): void {
   if (result.resolvedLibraries) {
     testMainOpts.libraryArchives = result.resolvedLibraries;
   }
+  if (virtualFixture) {
+    testMainOpts.virtualFixtureHeaderFile = "beckhoff_virtual_fixture.hpp";
+  }
   const testMainCpp = generateTestMain(testFiles, testMainOpts);
 
   // 5. Write to temp directory
@@ -723,6 +778,13 @@ function runTestMode(options: CLIOptions): void {
     writeFileSync(join(tempDir, "generated.hpp"), result.headerCode, "utf-8");
     writeFileSync(join(tempDir, "generated.cpp"), result.cppCode, "utf-8");
     writeFileSync(join(tempDir, "test_main.cpp"), testMainCpp, "utf-8");
+    if (virtualFixture) {
+      writeFileSync(
+        join(tempDir, "beckhoff_virtual_fixture.hpp"),
+        generateBeckhoffVirtualFixtureHeader(virtualFixture),
+        "utf8",
+      );
+    }
 
     // 6. Find runtime include directory
     const runtimeIncludeDir = findRuntimeIncludeDir(options.cxxFlags);
@@ -1032,7 +1094,6 @@ async function main(): Promise<void> {
     }
   }
 
-  const effectiveLibPaths = getEffectiveLibraryPaths(options);
   const compileOptions: Partial<CompileOptions> = {
     debug: options.debug,
     lineMapping: options.lineMapping,
@@ -1045,11 +1106,8 @@ async function main(): Promise<void> {
   if (additionalSources.length > 0) {
     compileOptions.additionalSources = additionalSources;
   }
-  if (effectiveLibPaths.length > 0) {
-    compileOptions.libraries = effectiveLibPaths.flatMap((p) =>
-      discoverStlibs(p),
-    );
-  }
+  const libraries = loadCompileLibraries(options);
+  if (libraries.length > 0) compileOptions.libraries = libraries;
   if (Object.keys(options.defines).length > 0) {
     compileOptions.globalConstants = options.defines;
   }

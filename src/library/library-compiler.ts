@@ -65,6 +65,7 @@ function serializeInitialValue(expr: Expression): string | undefined {
 function serializeVarType(
   name: string,
   typeRef: TypeReference,
+  initialValue?: Expression,
 ): LibraryVarType {
   const entry: LibraryVarType = { name, type: typeRef.name };
   if (typeRef.arrayDimensions && typeRef.arrayDimensions.length > 0) {
@@ -73,15 +74,52 @@ function serializeVarType(
   if (typeRef.elementTypeName) {
     entry.elementTypeName = typeRef.elementTypeName;
   }
+  if (typeRef.maxLength !== undefined) {
+    entry.maxLength = typeRef.maxLength;
+  }
   if (typeRef.referenceKind && typeRef.referenceKind !== "none") {
     entry.referenceKind = typeRef.referenceKind;
+  }
+  if (initialValue !== undefined) {
+    const serialized = serializeInitialValue(initialValue);
+    if (serialized !== undefined) entry.initialValue = serialized;
   }
   return entry;
 }
 
+function serializeMethod(
+  method: import("../frontend/ast.js").MethodDeclaration,
+): import("./library-manifest.js").LibraryMethodEntry {
+  return {
+    name: method.name,
+    ...(method.returnType ? { returnType: method.returnType.name } : {}),
+    parameters: method.varBlocks.flatMap((block) => {
+      const direction =
+        block.blockType === "VAR_OUTPUT"
+          ? "output"
+          : block.blockType === "VAR_IN_OUT"
+            ? "inout"
+            : block.blockType === "VAR_INPUT"
+              ? "input"
+              : undefined;
+      if (direction === undefined) return [];
+      return block.declarations.flatMap((decl) =>
+        decl.names.map((name) => ({
+          ...serializeVarType(name, decl.type, decl.initialValue),
+          direction,
+        })),
+      );
+    }),
+    visibility: method.visibility,
+    isAbstract: method.isAbstract,
+    isFinal: method.isFinal,
+    isOverride: method.isOverride,
+  };
+}
+
 /** Match a top-of-line POU header. */
 const POU_HEADER_RE =
-  /^[ \t]*(FUNCTION_BLOCK|FUNCTION|PROGRAM|TYPE)[ \t]+(\w+)/gm;
+  /^[ \t]*(FUNCTION_BLOCK|FUNCTION|PROGRAM|TYPE|INTERFACE)[ \t]+(\w+)/gm;
 
 /**
  * Build a "POU name → category" map from categorized source inputs.
@@ -209,6 +247,7 @@ export function compileLibrary(
     dependencies?: StlibArchive[];
     /** Global constants available during compilation (e.g., STRING_LENGTH) */
     globalConstants?: Record<string, number>;
+    runtimeCapabilities?: string[];
   },
 ): LibraryCompileResult {
   const catByName = buildCategoryByPouName(sources);
@@ -222,6 +261,7 @@ export function compileLibrary(
         namespace: options.namespace,
         functions: [],
         functionBlocks: [],
+        interfaces: [],
         types: [],
         headers: [],
         isBuiltin: false,
@@ -262,6 +302,7 @@ export function compileLibrary(
         namespace: options.namespace,
         functions: [],
         functionBlocks: [],
+        interfaces: [],
         types: [],
         headers: [],
         isBuiltin: false,
@@ -317,8 +358,7 @@ export function compileLibrary(
                       ? serializeInitialValue(decl.initialValue)
                       : undefined;
                   return decl.names.map((name) => ({
-                    name,
-                    type: decl.type.name,
+                    ...serializeVarType(name, decl.type, decl.initialValue),
                     direction:
                       block.blockType === "VAR_OUTPUT"
                         ? "output"
@@ -346,27 +386,55 @@ export function compileLibrary(
                 .filter((b) => b.blockType === "VAR_INPUT")
                 .flatMap((b) =>
                   b.declarations.flatMap((d) =>
-                    d.names.map((n) => serializeVarType(n, d.type)),
+                    d.names.map((n) =>
+                      serializeVarType(n, d.type, d.initialValue),
+                    ),
                   ),
                 ),
               outputs: fb.varBlocks
                 .filter((b) => b.blockType === "VAR_OUTPUT")
                 .flatMap((b) =>
                   b.declarations.flatMap((d) =>
-                    d.names.map((n) => serializeVarType(n, d.type)),
+                    d.names.map((n) =>
+                      serializeVarType(n, d.type, d.initialValue),
+                    ),
                   ),
                 ),
               inouts: fb.varBlocks
                 .filter((b) => b.blockType === "VAR_IN_OUT")
                 .flatMap((b) =>
                   b.declarations.flatMap((d) =>
-                    d.names.map((n) => serializeVarType(n, d.type)),
+                    d.names.map((n) =>
+                      serializeVarType(n, d.type, d.initialValue),
+                    ),
                   ),
                 ),
+              methods: fb.methods.map(serializeMethod),
+              properties: fb.properties.map((property) => ({
+                name: property.name,
+                type: property.type.name,
+                visibility: property.visibility,
+                readable: property.getter !== undefined,
+                writable: property.setter !== undefined,
+              })),
+              ...(fb.extends ? { extends: fb.extends } : {}),
+              ...(fb.implements ? { implements: [...fb.implements] } : {}),
+              isAbstract: fb.isAbstract,
+              isFinal: fb.isFinal,
             },
             catByName,
           ),
           docByName,
+        ),
+      ),
+      interfaces: ast.interfaces.map((iface) =>
+        tagCategory(
+          {
+            name: iface.name,
+            ...(iface.extends ? { extends: [...iface.extends] } : {}),
+            methods: iface.methods.map(serializeMethod),
+          },
+          catByName,
         ),
       ),
       types: ast.types.map((t) => {
@@ -376,17 +444,60 @@ export function compileLibrary(
             : t.definition.kind === "EnumDefinition"
               ? "enum"
               : "alias";
-        const entry: {
-          name: string;
-          kind: typeof kind;
-          fields?: Array<{ name: string; type: string }>;
-        } = { name: t.name, kind };
+        const entry: import("./library-manifest.js").LibraryTypeEntry = {
+          name: t.name,
+          kind,
+        };
         // Export struct member fields so consumers can type `x.field` access
         // on a dependency struct.
         if (t.definition.kind === "StructDefinition") {
           entry.fields = t.definition.fields.flatMap((decl) =>
-            decl.names.map((name) => ({ name, type: decl.type.name })),
+            decl.names.map((name) =>
+              serializeVarType(name, decl.type, decl.initialValue),
+            ),
           );
+        } else if (t.definition.kind === "EnumDefinition") {
+          if (t.definition.baseType) {
+            entry.baseType = t.definition.baseType.name;
+          }
+          entry.enumMembers = t.definition.members.map((member) => {
+            const value = member.value
+              ? serializeInitialValue(member.value)
+              : undefined;
+            return {
+              name: member.name,
+              ...(value !== undefined ? { value } : {}),
+            };
+          });
+        } else if (t.definition.kind === "ArrayDefinition") {
+          entry.baseType = t.definition.elementType.name;
+          entry.elementTypeName = t.definition.elementType.name;
+          const dimensions = t.definition.dimensions.flatMap((dimension) => {
+            if (dimension.start === undefined || dimension.end === undefined)
+              return [];
+            const start = Number(serializeInitialValue(dimension.start));
+            const end = Number(serializeInitialValue(dimension.end));
+            return Number.isFinite(start) && Number.isFinite(end)
+              ? [{ start, end }]
+              : [];
+          });
+          if (dimensions.length > 0) entry.arrayDimensions = dimensions;
+        } else if (t.definition.kind === "SubrangeDefinition") {
+          entry.baseType = t.definition.baseType.name;
+        } else if (t.definition.kind === "TypeReference") {
+          entry.baseType = t.definition.name;
+          if (t.definition.referenceKind !== "none") {
+            entry.referenceKind = t.definition.referenceKind;
+          }
+          if (t.definition.arrayDimensions) {
+            entry.arrayDimensions = t.definition.arrayDimensions;
+          }
+          if (t.definition.elementTypeName) {
+            entry.elementTypeName = t.definition.elementTypeName;
+          }
+          if (t.definition.maxLength !== undefined) {
+            entry.maxLength = t.definition.maxLength;
+          }
         }
         return tagDocumentation(tagCategory(entry, catByName), docByName);
       }),
@@ -409,6 +520,9 @@ export function compileLibrary(
       ),
       headers: [headerFileName],
       isBuiltin: false,
+      ...(options.runtimeCapabilities?.length
+        ? { runtimeCapabilities: [...options.runtimeCapabilities] }
+        : {}),
       sourceFiles: sources.map((s) => s.fileName),
     },
     headerCode: cleanHeader,
@@ -446,6 +560,7 @@ export function compileStlib(
     dependencies?: StlibArchive[];
     /** Global constants available during compilation (e.g., STRING_LENGTH) */
     globalConstants?: Record<string, number>;
+    runtimeCapabilities?: string[];
   },
 ): StlibCompileResult {
   const libResult = compileLibrary(sources, options);
@@ -457,7 +572,7 @@ export function compileStlib(
     return {
       success: false,
       archive: {
-        formatVersion: 1,
+        formatVersion: 2,
         manifest: libResult.manifest,
         chunks: [],
         dependencies: [],
@@ -476,7 +591,7 @@ export function compileStlib(
   // needed: a chunk only emits its own declaration text, never a
   // dependency's, by construction.
   const archive: StlibCompileResult["archive"] = {
-    formatVersion: 1,
+    formatVersion: 2,
     manifest,
     chunks: libResult.chunks ?? [],
     dependencies: (options.dependencies ?? []).map((d) => ({

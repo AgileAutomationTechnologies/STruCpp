@@ -8,6 +8,7 @@ import {
   loadLibraryManifest,
   registerLibrarySymbols,
 } from "../../src/library/library-loader.js";
+import { loadStlibFromFile } from "../../src/node/library-loader.js";
 import { applyLibraryConfigDocumentation } from "../../src/library/library-config.js";
 import { resolveLibraryFBVariable } from "../../src/library/variable-aliases.js";
 import {
@@ -112,6 +113,32 @@ describe("library function-block variable aliases", () => {
     expect(result.success).toBe(true);
     expect(result.cppCode).toContain("FB.CANON_IN = true;");
     expect(result.cppCode).toContain("FB.SECOND = false;");
+  });
+
+  it("accepts TwinCAT counter aliases on the bundled IEC standard FB library", () => {
+    const archive = loadStlibFromFile("libs/iec-standard-fb.stlib");
+    const result = compile(
+      `
+        PROGRAM Main
+          VAR
+            up : CTU;
+            down : CTD;
+            both : CTUD;
+          END_VAR
+          up(CU := TRUE, RESET := TRUE, PV := 5);
+          down(CD := TRUE, LOAD := TRUE, PV := 5);
+          both(CU := TRUE, CD := FALSE, RESET := FALSE, LOAD := TRUE, PV := 5);
+        END_PROGRAM
+      `,
+      { libraries: [archive] },
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.cppCode).toContain("UP.R = true;");
+    expect(result.cppCode).toContain("DOWN.LD = true;");
+    expect(result.cppCode).toContain("BOTH.R = false;");
+    expect(result.cppCode).toContain("BOTH.LD = true;");
+    expect(result.cppCode).not.toMatch(/\.(RESET|LOAD)\b/);
   });
 
   it("reports unknown and duplicate canonical/alias formals before C++", () => {

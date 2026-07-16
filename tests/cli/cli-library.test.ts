@@ -96,7 +96,7 @@ describe("CLI Library Features", () => {
 
       // Validate the .stlib archive structure
       const archive = JSON.parse(readFileSync(stlibPath, "utf-8"));
-      expect(archive.formatVersion).toBe(1);
+      expect(archive.formatVersion).toBe(2);
       expect(archive.manifest.name).toBe("math-lib");
       expect(archive.manifest.version).toBe("1.0.0");
       expect(archive.manifest.functions).toHaveLength(1);
@@ -446,7 +446,7 @@ describe("CLI Library Features", () => {
       const archive = JSON.parse(
         readFileSync(join(outDir, "arith-lib.stlib"), "utf-8"),
       );
-      expect(archive.formatVersion).toBe(1);
+      expect(archive.formatVersion).toBe(2);
       expect(archive.manifest.functions).toHaveLength(2);
       const names = archive.manifest.functions.map(
         (f: { name: string }) => f.name,

@@ -156,7 +156,7 @@ export class TestCodeGenerator extends CodeGenerator {
     let currentType = this.currentScopeVarTypes.get(rootName.toUpperCase());
 
     for (let i = 1; i < path.length; i++) {
-      const field = path[i]!;
+      const field = this.resolveCanonicalMemberName(currentType, path[i]!);
       if (currentType && this.ast) {
         const memberType = this.resolveMemberType(currentType, field);
         // Check for field name vs type name collision

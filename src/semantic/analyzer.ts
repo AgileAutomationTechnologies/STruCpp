@@ -39,6 +39,7 @@ import {
 import type { FunctionSymbol } from "./symbol-table.js";
 import { TypeChecker } from "./type-checker.js";
 import {
+  ELEMENTARY_TYPES,
   getBitAccessWidth,
   resolveFieldType,
   resolveArrayElementType,
@@ -1640,6 +1641,29 @@ export class SemanticAnalyzer {
       this.checkFunctionBlockInvocationArgs(expr, varTypeMap);
       this.checkStdFunctionArgs(expr);
     }
+    if (
+      expr.kind === "FunctionCallExpression" &&
+      expr.functionName.includes(".")
+    ) {
+      const dot = expr.functionName.indexOf(".");
+      this.checkMethodInvocationArgs(
+        {
+          kind: "MethodCallExpression",
+          sourceSpan: expr.sourceSpan,
+          object: {
+            kind: "VariableExpression",
+            sourceSpan: expr.sourceSpan,
+            name: expr.functionName.slice(0, dot),
+            subscripts: [],
+            fieldAccess: [],
+            isDereference: false,
+          },
+          methodName: expr.functionName.slice(dot + 1),
+          arguments: expr.arguments,
+        },
+        varTypeMap,
+      );
+    }
 
     // Recurse into sub-expressions
     if (expr.kind === "BinaryExpression") {
@@ -1652,6 +1676,7 @@ export class SemanticAnalyzer {
         this.validateExpression(arg.value, varTypeMap, ast);
       }
     } else if (expr.kind === "MethodCallExpression") {
+      this.checkMethodInvocationArgs(expr, varTypeMap);
       this.validateExpression(expr.object, varTypeMap, ast);
       for (const arg of expr.arguments) {
         this.validateExpression(arg.value, varTypeMap, ast);
@@ -1659,6 +1684,131 @@ export class SemanticAnalyzer {
     } else if (expr.kind === "ParenthesizedExpression") {
       this.validateExpression(expr.expression, varTypeMap, ast);
     }
+  }
+
+  private checkMethodInvocationArgs(
+    expr: import("../frontend/ast.js").MethodCallExpression,
+    varTypeMap: Map<string, string>,
+  ): void {
+    if (expr.object.kind !== "VariableExpression") return;
+    const typeName = varTypeMap.get(expr.object.name.toUpperCase());
+    if (!typeName) return;
+    const fb = this.symbolTables.lookupFunctionBlock(typeName);
+    if (!fb) return;
+
+    const librarySignature = fb.methodSignatures?.get(
+      expr.methodName.toUpperCase(),
+    );
+    const declaration = fb.declaration.methods.find(
+      (method) => method.name.toUpperCase() === expr.methodName.toUpperCase(),
+    );
+    if (!librarySignature && !declaration) {
+      this.addError(
+        `Unknown method '${expr.methodName}' for function block '${fb.name}'`,
+        expr.sourceSpan.startLine,
+        expr.sourceSpan.startCol,
+        expr.sourceSpan.file,
+      );
+      return;
+    }
+
+    const parameters =
+      librarySignature?.parameters ??
+      declaration!.varBlocks.flatMap((block) => {
+        const direction =
+          block.blockType === "VAR_OUTPUT"
+            ? "output"
+            : block.blockType === "VAR_IN_OUT"
+              ? "inout"
+              : block.blockType === "VAR_INPUT"
+                ? "input"
+                : undefined;
+        if (!direction) return [];
+        return block.declarations.flatMap((variable) =>
+          variable.names.map((name) => ({
+            name,
+            kind: "variable" as const,
+            type:
+              ELEMENTARY_TYPES[variable.type.name.toUpperCase()] ??
+              ({
+                typeKind: "elementary",
+                name: variable.type.name,
+                sizeBits: 0,
+              } as import("../frontend/ast.js").ElementaryType),
+            declaration: variable,
+            isInput: direction === "input",
+            isOutput: direction === "output",
+            isInOut: direction === "inout",
+            isExternal: false,
+            isGlobal: false,
+            isRetain: false,
+            ...(variable.initialValue
+              ? { initialValue: "<local-default>" }
+              : {}),
+          })),
+        );
+      });
+
+    const assigned = new Set<number>();
+    let positional = 0;
+    for (const arg of expr.arguments) {
+      let parameterIndex: number;
+      if (arg.name === undefined) {
+        while (assigned.has(positional)) positional++;
+        parameterIndex = positional++;
+      } else {
+        parameterIndex = parameters.findIndex(
+          (parameter) =>
+            parameter.name.toUpperCase() === arg.name!.toUpperCase(),
+        );
+      }
+      if (parameterIndex < 0 || parameterIndex >= parameters.length) {
+        this.addError(
+          `Unknown parameter '${arg.name ?? parameterIndex + 1}' for method '${fb.name}.${expr.methodName}'`,
+          arg.sourceSpan.startLine,
+          arg.sourceSpan.startCol,
+          arg.sourceSpan.file,
+        );
+        continue;
+      }
+      const parameter = parameters[parameterIndex]!;
+      if (assigned.has(parameterIndex)) {
+        this.addError(
+          `Method '${fb.name}.${expr.methodName}' parameter '${parameter.name}' is assigned more than once`,
+          arg.sourceSpan.startLine,
+          arg.sourceSpan.startCol,
+          arg.sourceSpan.file,
+        );
+        continue;
+      }
+      assigned.add(parameterIndex);
+      if (arg.isOutput && parameter.isInput) {
+        this.addError(
+          `Output binding '=>' cannot target input parameter '${parameter.name}' of method '${fb.name}.${expr.methodName}'`,
+          arg.sourceSpan.startLine,
+          arg.sourceSpan.startCol,
+          arg.sourceSpan.file,
+        );
+      } else if (!arg.isOutput && parameter.isOutput) {
+        this.addError(
+          `Input assignment ':=' cannot target output parameter '${parameter.name}' of method '${fb.name}.${expr.methodName}'`,
+          arg.sourceSpan.startLine,
+          arg.sourceSpan.startCol,
+          arg.sourceSpan.file,
+        );
+      }
+    }
+
+    parameters.forEach((parameter, index) => {
+      if (!assigned.has(index) && parameter.initialValue === undefined) {
+        this.addError(
+          `Missing required parameter '${parameter.name}' for method '${fb.name}.${expr.methodName}'`,
+          expr.sourceSpan.startLine,
+          expr.sourceSpan.startCol,
+          expr.sourceSpan.file,
+        );
+      }
+    });
   }
 
   /**

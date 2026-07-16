@@ -72,6 +72,8 @@ export interface TestMainGenOptions {
   ast?: CompilationUnit;
   /** Resolved library archives (stdlib + user) — used to register FB types */
   libraryArchives?: StlibArchive[];
+  /** Generated header that restores the virtual environment baseline. */
+  virtualFixtureHeaderFile?: string;
   /**
    * Known functions for mock dispatch generation.
    * @deprecated Use `ast` instead for correct type resolution.
@@ -161,6 +163,9 @@ export function generateTestMain(
   // Includes
   lines.push(`#include "${options.headerFileName}"`);
   lines.push('#include "iec_test.hpp"');
+  if (options.virtualFixtureHeaderFile) {
+    lines.push(`#include "${options.virtualFixtureHeaderFile}"`);
+  }
   lines.push("#include <cstring>");
   lines.push("");
   lines.push("using namespace strucpp;");
@@ -258,6 +263,7 @@ export function generateTestMain(
         testCodegen,
         testFile.fileName,
         astFunctionMap,
+        Boolean(options.virtualFixtureHeaderFile),
       );
       const code = gen.generateTestFunction(
         funcName,
@@ -354,6 +360,7 @@ class TestFunctionGenerator {
   private testCodegen: TestCodeGenerator;
   private astFunctionMap: Map<string, FunctionDeclaration>;
   private fileName: string;
+  private resetVirtualEnvironment: boolean;
   private indent = "    ";
   /** Names of variables from SETUP block (need s. prefix for mock paths) */
   private setupVarNames: Set<string> | undefined;
@@ -362,11 +369,13 @@ class TestFunctionGenerator {
     testCodegen: TestCodeGenerator,
     fileName: string,
     astFunctionMap?: Map<string, FunctionDeclaration>,
+    resetVirtualEnvironment = false,
   ) {
     this.testCodegen = testCodegen;
     this.fileName = fileName;
     this.astFunctionMap =
       astFunctionMap ?? new Map<string, FunctionDeclaration>();
+    this.resetVirtualEnvironment = resetVirtualEnvironment;
   }
 
   /**
@@ -441,6 +450,9 @@ class TestFunctionGenerator {
     const lines: string[] = [];
     lines.push(`// TEST '${escapeString(tc.name)}'`);
     lines.push(`bool ${funcName}(strucpp::TestContext& ctx) {`);
+    if (this.resetVirtualEnvironment) {
+      lines.push(`${this.indent}strucpp_apply_virtual_fixture();`);
+    }
 
     // Reset function dispatch pointers to real implementations
     if (mockedFunctionNames && mockedFunctionNames.size > 0) {
@@ -584,6 +596,13 @@ class TestFunctionGenerator {
     lines.push(
       `${this.indent}strucpp::__CURRENT_TIME_NS += static_cast<int64_t>(${durationExpr});`,
     );
+    if (this.resetVirtualEnvironment) {
+      lines.push(
+        `${this.indent}beckhoff_virtual::environment().monotonicNanoseconds = strucpp::__CURRENT_TIME_NS;`,
+        `${this.indent}beckhoff_virtual::environment().utcUnixNanoseconds += static_cast<int64_t>(${durationExpr});`,
+        `${this.indent}strucpp::__CURRENT_DT_NS = beckhoff_virtual::environment().utcUnixNanoseconds;`,
+      );
+    }
   }
 
   // ===========================================================================

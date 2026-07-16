@@ -9,6 +9,8 @@
 
 import type {
   LibraryManifest,
+  LibraryMethodEntry,
+  LibraryPropertyEntry,
   LibraryVarType,
   StlibArchive,
 } from "./library-manifest.js";
@@ -16,10 +18,14 @@ import type { SymbolTables, VariableSymbol } from "../semantic/symbol-table.js";
 import { DuplicateSymbolError } from "../semantic/symbol-table.js";
 import type {
   ElementaryType,
+  EnumType,
   IECType,
+  MethodDeclaration,
+  PropertyDeclaration,
   StructType,
   TypeReference,
   VarDeclaration,
+  VarBlock,
 } from "../frontend/ast.js";
 import { createDefaultSourceSpan } from "../frontend/ast.js";
 import { ELEMENTARY_TYPES } from "../semantic/type-utils.js";
@@ -79,7 +85,21 @@ function loadFunctionBlockVariables(
       }
       variable.aliases = [...(obj.aliases as string[])];
     }
-    if (Array.isArray(obj.arrayDimensions)) {
+    if (obj.arrayDimensions !== undefined) {
+      if (
+        !Array.isArray(obj.arrayDimensions) ||
+        obj.arrayDimensions.some(
+          (dimension) =>
+            typeof dimension !== "object" ||
+            dimension === null ||
+            !Number.isInteger((dimension as Record<string, unknown>).start) ||
+            !Number.isInteger((dimension as Record<string, unknown>).end),
+        )
+      ) {
+        throw new LibraryManifestError(
+          `Invalid library manifest: ${path}[${index}].arrayDimensions must contain integer start/end bounds`,
+        );
+      }
       variable.arrayDimensions = obj.arrayDimensions as Array<{
         start: number;
         end: number;
@@ -88,10 +108,121 @@ function loadFunctionBlockVariables(
     if (typeof obj.elementTypeName === "string") {
       variable.elementTypeName = obj.elementTypeName;
     }
-    if (typeof obj.referenceKind === "string") {
-      variable.referenceKind = obj.referenceKind;
+    if (
+      typeof obj.maxLength === "number" ||
+      (typeof obj.maxLength === "string" && obj.maxLength.length > 0)
+    ) {
+      variable.maxLength = obj.maxLength;
+    } else if (obj.maxLength !== undefined) {
+      throw new LibraryManifestError(
+        `Invalid library manifest: ${path}[${index}].maxLength must be a number or non-empty string`,
+      );
+    }
+    if (obj.referenceKind !== undefined) {
+      if (
+        !["pointer_to", "reference_to", "ref_to"].includes(
+          String(obj.referenceKind),
+        )
+      ) {
+        throw new LibraryManifestError(
+          `Invalid library manifest: ${path}[${index}].referenceKind is invalid`,
+        );
+      }
+      variable.referenceKind = String(obj.referenceKind);
+    }
+    if (typeof obj.initialValue === "string") {
+      variable.initialValue = obj.initialValue;
     }
     return variable;
+  });
+}
+
+function loadMethods(value: unknown, path: string): LibraryMethodEntry[] {
+  if (!Array.isArray(value)) {
+    throw new LibraryManifestError(
+      `Invalid library manifest: ${path} must be an array`,
+    );
+  }
+  return value.map((raw, index) => {
+    if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+      throw new LibraryManifestError(
+        `Invalid library manifest: ${path}[${index}] must be an object`,
+      );
+    }
+    const obj = raw as Record<string, unknown>;
+    if (typeof obj.name !== "string" || obj.name.length === 0) {
+      throw new LibraryManifestError(
+        `Invalid library manifest: ${path}[${index}].name must be a non-empty string`,
+      );
+    }
+    const visibility = obj.visibility;
+    if (!["PUBLIC", "PRIVATE", "PROTECTED"].includes(String(visibility))) {
+      throw new LibraryManifestError(
+        `Invalid library manifest: ${path}[${index}].visibility is invalid`,
+      );
+    }
+    const parameters = loadFunctionBlockVariables(
+      obj.parameters,
+      `${path}[${index}].parameters`,
+    ).map((parameter, parameterIndex) => {
+      const rawParameter = (obj.parameters as unknown[])[
+        parameterIndex
+      ] as Record<string, unknown>;
+      if (
+        !["input", "output", "inout"].includes(String(rawParameter.direction))
+      ) {
+        throw new LibraryManifestError(
+          `Invalid library manifest: ${path}[${index}].parameters[${parameterIndex}].direction is invalid`,
+        );
+      }
+      return {
+        ...parameter,
+        direction: rawParameter.direction as "input" | "output" | "inout",
+      };
+    });
+    return {
+      name: obj.name,
+      ...(typeof obj.returnType === "string"
+        ? { returnType: obj.returnType }
+        : {}),
+      parameters,
+      visibility: visibility as LibraryMethodEntry["visibility"],
+      isAbstract: Boolean(obj.isAbstract),
+      isFinal: Boolean(obj.isFinal),
+      isOverride: Boolean(obj.isOverride),
+    };
+  });
+}
+
+function loadProperties(value: unknown, path: string): LibraryPropertyEntry[] {
+  if (!Array.isArray(value)) {
+    throw new LibraryManifestError(
+      `Invalid library manifest: ${path} must be an array`,
+    );
+  }
+  return value.map((raw, index) => {
+    const obj = raw as Record<string, unknown>;
+    if (
+      typeof raw !== "object" ||
+      raw === null ||
+      Array.isArray(raw) ||
+      typeof obj.name !== "string" ||
+      typeof obj.type !== "string" ||
+      !["PUBLIC", "PRIVATE", "PROTECTED"].includes(String(obj.visibility)) ||
+      typeof obj.readable !== "boolean" ||
+      typeof obj.writable !== "boolean"
+    ) {
+      throw new LibraryManifestError(
+        `Invalid library manifest: ${path}[${index}] is not a valid property`,
+      );
+    }
+    return {
+      name: obj.name,
+      type: obj.type,
+      visibility: obj.visibility as LibraryPropertyEntry["visibility"],
+      readable: obj.readable,
+      writable: obj.writable,
+    };
   });
 }
 
@@ -104,16 +235,21 @@ function makeTypeRef(v: LibraryVarType): TypeReference {
     sourceSpan: createDefaultSourceSpan(),
     name: v.type,
     isReference:
-      v.referenceKind === "pointer_to" || v.referenceKind === "reference_to",
+      v.referenceKind === "pointer_to" ||
+      v.referenceKind === "reference_to" ||
+      v.referenceKind === "ref_to",
     referenceKind:
       v.referenceKind === "pointer_to"
         ? "pointer_to"
         : v.referenceKind === "reference_to"
           ? "reference_to"
-          : "none",
+          : v.referenceKind === "ref_to"
+            ? "ref_to"
+            : "none",
   };
   if (v.arrayDimensions) ref.arrayDimensions = v.arrayDimensions;
   if (v.elementTypeName) ref.elementTypeName = v.elementTypeName;
+  if (v.maxLength !== undefined) ref.maxLength = v.maxLength;
   return ref;
 }
 
@@ -148,6 +284,87 @@ function makeVarSymbol(
     isGlobal: false,
     isRetain: false,
     ...(v.aliases ? { aliases: [...v.aliases] } : {}),
+    ...(v.initialValue !== undefined ? { initialValue: v.initialValue } : {}),
+  };
+}
+
+function makeVarBlock(
+  blockType: "VAR_INPUT" | "VAR_OUTPUT" | "VAR_IN_OUT",
+  variables: LibraryVarType[],
+): VarBlock {
+  return {
+    kind: "VarBlock",
+    sourceSpan: createDefaultSourceSpan(),
+    blockType,
+    isConstant: false,
+    isRetain: false,
+    declarations: variables.map((variable) => ({
+      kind: "VarDeclaration",
+      sourceSpan: createDefaultSourceSpan(),
+      names: [variable.name],
+      type: makeTypeRef(variable),
+    })),
+  };
+}
+
+function makeMethodDeclaration(method: LibraryMethodEntry): MethodDeclaration {
+  const groups = [
+    {
+      blockType: "VAR_INPUT" as const,
+      variables: method.parameters.filter((p) => p.direction === "input"),
+    },
+    {
+      blockType: "VAR_OUTPUT" as const,
+      variables: method.parameters.filter((p) => p.direction === "output"),
+    },
+    {
+      blockType: "VAR_IN_OUT" as const,
+      variables: method.parameters.filter((p) => p.direction === "inout"),
+    },
+  ];
+  return {
+    kind: "MethodDeclaration",
+    sourceSpan: createDefaultSourceSpan(),
+    name: method.name,
+    visibility: method.visibility,
+    isAbstract: method.isAbstract,
+    isFinal: method.isFinal,
+    isOverride: method.isOverride,
+    ...(method.returnType
+      ? {
+          returnType: {
+            kind: "TypeReference" as const,
+            sourceSpan: createDefaultSourceSpan(),
+            name: method.returnType,
+            isReference: false,
+            referenceKind: "none" as const,
+          },
+        }
+      : {}),
+    varBlocks: groups
+      .filter((group) => group.variables.length > 0)
+      .map((group) => makeVarBlock(group.blockType, group.variables)),
+    body: [],
+  };
+}
+
+function makePropertyDeclaration(
+  property: LibraryPropertyEntry,
+): PropertyDeclaration {
+  return {
+    kind: "PropertyDeclaration",
+    sourceSpan: createDefaultSourceSpan(),
+    name: property.name,
+    type: {
+      kind: "TypeReference",
+      sourceSpan: createDefaultSourceSpan(),
+      name: property.type,
+      isReference: false,
+      referenceKind: "none",
+    },
+    visibility: property.visibility,
+    ...(property.readable ? { getter: [] } : {}),
+    ...(property.writable ? { setter: [] } : {}),
   };
 }
 
@@ -207,7 +424,32 @@ export function loadLibraryManifest(json: unknown): LibraryManifest {
           `Invalid library manifest: functions[${i}].parameters must be an array`,
         );
       }
-      functions.push(fn as unknown as LibraryManifest["functions"][0]);
+      const rawParameters = fn.parameters as unknown[];
+      functions.push({
+        ...(fn as unknown as LibraryManifest["functions"][0]),
+        parameters: loadFunctionBlockVariables(
+          rawParameters,
+          `functions[${i}].parameters`,
+        ).map((parameter, parameterIndex) => {
+          const rawParameter = rawParameters[parameterIndex] as Record<
+            string,
+            unknown
+          >;
+          if (
+            !["input", "output", "inout"].includes(
+              String(rawParameter.direction),
+            )
+          ) {
+            throw new LibraryManifestError(
+              `Invalid library manifest: functions[${i}].parameters[${parameterIndex}].direction is invalid`,
+            );
+          }
+          return {
+            ...parameter,
+            direction: rawParameter.direction as "input" | "output" | "inout",
+          };
+        }),
+      });
     }
   }
 
@@ -235,7 +477,21 @@ export function loadLibraryManifest(json: unknown): LibraryManifest {
           fb.inouts,
           `functionBlocks[${i}].inouts`,
         ),
+        methods:
+          fb.methods === undefined
+            ? []
+            : loadMethods(fb.methods, `functionBlocks[${i}].methods`),
+        properties:
+          fb.properties === undefined
+            ? []
+            : loadProperties(fb.properties, `functionBlocks[${i}].properties`),
+        isAbstract: Boolean(fb.isAbstract),
+        isFinal: Boolean(fb.isFinal),
       };
+      if (typeof fb.extends === "string") entry.extends = fb.extends;
+      if (Array.isArray(fb.implements)) {
+        entry.implements = fb.implements.map(String);
+      }
       if (typeof fb.documentation === "string") {
         entry.documentation = fb.documentation;
       }
@@ -258,6 +514,34 @@ export function loadLibraryManifest(json: unknown): LibraryManifest {
     }
   }
 
+  const interfaces: LibraryManifest["interfaces"] = [];
+  if (Array.isArray(obj.interfaces)) {
+    for (let i = 0; i < obj.interfaces.length; i++) {
+      const iface = obj.interfaces[i] as Record<string, unknown>;
+      if (typeof iface.name !== "string" || iface.name.length === 0) {
+        throw new LibraryManifestError(
+          `Invalid library manifest: interfaces[${i}].name must be a non-empty string`,
+        );
+      }
+      interfaces.push({
+        name: iface.name,
+        ...(Array.isArray(iface.extends)
+          ? { extends: iface.extends.map(String) }
+          : {}),
+        methods:
+          iface.methods === undefined
+            ? []
+            : loadMethods(iface.methods, `interfaces[${i}].methods`),
+        ...(typeof iface.documentation === "string"
+          ? { documentation: iface.documentation }
+          : {}),
+        ...(typeof iface.category === "string"
+          ? { category: iface.category }
+          : {}),
+      });
+    }
+  }
+
   // Validate types array
   const types: LibraryManifest["types"] = [];
   if (Array.isArray(obj.types)) {
@@ -276,12 +560,53 @@ export function loadLibraryManifest(json: unknown): LibraryManifest {
           `Invalid library manifest: types[${i}].kind must be "struct", "enum", or "alias"`,
         );
       }
-      if (t.fields !== undefined && !Array.isArray(t.fields)) {
-        throw new LibraryManifestError(
-          `Invalid library manifest: types[${i}].fields must be an array`,
+      const entry: LibraryManifest["types"][0] = {
+        name: t.name,
+        kind: t.kind as LibraryManifest["types"][0]["kind"],
+      };
+      if (t.fields !== undefined) {
+        entry.fields = loadFunctionBlockVariables(
+          t.fields,
+          `types[${i}].fields`,
         );
       }
-      types.push(t as unknown as LibraryManifest["types"][0]);
+      if (Array.isArray(t.enumMembers)) {
+        entry.enumMembers = t.enumMembers.map((rawMember, memberIndex) => {
+          const member = rawMember as Record<string, unknown>;
+          if (typeof member?.name !== "string") {
+            throw new LibraryManifestError(
+              `Invalid library manifest: types[${i}].enumMembers[${memberIndex}].name must be a string`,
+            );
+          }
+          return {
+            name: member.name,
+            ...(typeof member.value === "string"
+              ? { value: member.value }
+              : {}),
+          };
+        });
+      }
+      if (typeof t.baseType === "string") entry.baseType = t.baseType;
+      if (Array.isArray(t.arrayDimensions)) {
+        entry.arrayDimensions = t.arrayDimensions as Array<{
+          start: number;
+          end: number;
+        }>;
+      }
+      if (typeof t.elementTypeName === "string")
+        entry.elementTypeName = t.elementTypeName;
+      if (
+        typeof t.maxLength === "number" ||
+        (typeof t.maxLength === "string" && t.maxLength.length > 0)
+      ) {
+        entry.maxLength = t.maxLength;
+      }
+      if (typeof t.referenceKind === "string")
+        entry.referenceKind = t.referenceKind;
+      if (typeof t.documentation === "string")
+        entry.documentation = t.documentation;
+      if (typeof t.category === "string") entry.category = t.category;
+      types.push(entry);
     }
   }
 
@@ -311,6 +636,7 @@ export function loadLibraryManifest(json: unknown): LibraryManifest {
     namespace,
     functions,
     functionBlocks,
+    interfaces,
     types,
     headers: Array.isArray(obj.headers) ? (obj.headers as string[]) : [],
     isBuiltin: Boolean(obj.isBuiltin),
@@ -321,6 +647,15 @@ export function loadLibraryManifest(json: unknown): LibraryManifest {
   }
   if (obj.description !== undefined) {
     result.description = String(obj.description);
+  }
+  if (typeof obj.displayName === "string") result.displayName = obj.displayName;
+  if (Array.isArray(obj.runtimeCapabilities)) {
+    if (obj.runtimeCapabilities.some((item) => typeof item !== "string")) {
+      throw new LibraryManifestError(
+        "Invalid library manifest: runtimeCapabilities must contain strings",
+      );
+    }
+    result.runtimeCapabilities = [...(obj.runtimeCapabilities as string[])];
   }
   if (Array.isArray(obj.sourceFiles)) {
     result.sourceFiles = obj.sourceFiles as string[];
@@ -337,15 +672,94 @@ export function registerLibrarySymbols(
   manifest: LibraryManifest,
   symbolTables: SymbolTables,
 ): void {
+  // Make archive-local types visible before callable return/parameter types are
+  // reconstructed. This is significant for functions returning an enum,
+  // struct, alias, or interface declared in the same archive.
+  for (const t of manifest.types) {
+    if (symbolTables.lookupType(t.name)) continue;
+    const resolvedType: IECType =
+      t.kind === "struct" && t.fields
+        ? ({
+            typeKind: "struct",
+            name: t.name,
+            fields: new Map<string, IECType>(
+              t.fields.map((field) => [
+                field.name,
+                ELEMENTARY_TYPES[field.type.toUpperCase()] ??
+                  ({
+                    typeKind: "elementary",
+                    name: field.type,
+                    sizeBits: 0,
+                  } as ElementaryType),
+              ]),
+            ),
+          } as StructType)
+        : t.kind === "enum"
+          ? ({
+              typeKind: "enum",
+              name: t.name,
+              values: (t.enumMembers ?? []).map((member) => member.name),
+            } as EnumType)
+          : (ELEMENTARY_TYPES[(t.baseType ?? t.name).toUpperCase()] ??
+            ({
+              typeKind: "elementary",
+              name: t.name,
+              sizeBits: 0,
+            } as ElementaryType));
+    symbolTables.globalScope.define({
+      name: t.name,
+      kind: "type",
+      declaration: {
+        kind: "TypeDeclaration",
+        sourceSpan: createDefaultSourceSpan(),
+        name: t.name,
+        definition: {
+          kind: "TypeReference",
+          sourceSpan: createDefaultSourceSpan(),
+          name: t.baseType ?? t.name,
+          isReference: false,
+          referenceKind: "none",
+        },
+      },
+      resolvedType,
+    });
+  }
+  for (const iface of manifest.interfaces ?? []) {
+    if (symbolTables.lookupType(iface.name)) continue;
+    symbolTables.globalScope.define({
+      name: iface.name,
+      kind: "type",
+      declaration: {
+        kind: "TypeDeclaration",
+        sourceSpan: createDefaultSourceSpan(),
+        name: iface.name,
+        definition: {
+          kind: "TypeReference",
+          sourceSpan: createDefaultSourceSpan(),
+          name: iface.name,
+          isReference: false,
+          referenceKind: "none",
+        },
+      },
+      resolvedType: {
+        typeKind: "elementary",
+        name: iface.name,
+        sizeBits: 0,
+      } as ElementaryType,
+    });
+  }
   // Register functions
   for (const fn of manifest.functions) {
-    const returnType: ElementaryType = ELEMENTARY_TYPES[
-      fn.returnType.toUpperCase()
-    ] ?? {
-      typeKind: "elementary",
-      name: fn.returnType,
-      sizeBits: 0,
-    };
+    const registeredReturnType = symbolTables.globalScope.lookup(fn.returnType);
+    const returnType: IECType =
+      registeredReturnType?.kind === "type"
+        ? registeredReturnType.resolvedType
+        : (ELEMENTARY_TYPES[fn.returnType.toUpperCase()] ??
+          ({
+            typeKind: "elementary",
+            name: fn.returnType,
+            sizeBits: 0,
+          } as ElementaryType));
 
     try {
       symbolTables.globalScope.define({
@@ -367,10 +781,7 @@ export function registerLibrarySymbols(
         },
         returnType,
         parameters: fn.parameters.map((p) => {
-          const sym = makeVarSymbol(
-            { name: p.name, type: p.type },
-            p.direction,
-          );
+          const sym = makeVarSymbol(p, p.direction);
           // Carry the optional-input marker: a parameter with an initial value
           // is optional at the call site (see Option A in the analyzer).
           if (p.initialValue !== undefined) sym.initialValue = p.initialValue;
@@ -405,12 +816,18 @@ export function registerLibrarySymbols(
               ]),
             ),
           } as StructType)
-        : (ELEMENTARY_TYPES[t.name.toUpperCase()] ??
-          ({
-            typeKind: "elementary",
-            name: t.name,
-            sizeBits: 0,
-          } as ElementaryType));
+        : t.kind === "enum"
+          ? ({
+              typeKind: "enum",
+              name: t.name,
+              values: (t.enumMembers ?? []).map((member) => member.name),
+            } as EnumType)
+          : (ELEMENTARY_TYPES[t.name.toUpperCase()] ??
+            ({
+              typeKind: "elementary",
+              name: t.name,
+              sizeBits: 0,
+            } as ElementaryType));
 
     try {
       symbolTables.globalScope.define({
@@ -433,6 +850,79 @@ export function registerLibrarySymbols(
     } catch (e) {
       if (!(e instanceof DuplicateSymbolError)) throw e;
     }
+    if (t.kind === "enum") {
+      for (let index = 0; index < (t.enumMembers ?? []).length; index++) {
+        const member = t.enumMembers![index]!;
+        const explicit =
+          member.value === undefined ? NaN : Number(member.value);
+        try {
+          symbolTables.globalScope.define({
+            name: member.name,
+            kind: "enumValue",
+            enumType: t.name,
+            value: Number.isFinite(explicit) ? explicit : index,
+          });
+        } catch (e) {
+          if (!(e instanceof DuplicateSymbolError)) throw e;
+        }
+      }
+    }
+  }
+
+  // Interfaces are nominal dependency types. Their methods are also carried
+  // by the manifest/codegen registry for calls and IMPLEMENTS validation.
+  for (const iface of manifest.interfaces ?? []) {
+    const inheritedMethods = new Map<
+      string,
+      { returnType?: string; parameters: VariableSymbol[] }
+    >();
+    for (const parentName of iface.extends ?? []) {
+      for (const [
+        methodName,
+        signature,
+      ] of symbolTables.interfaceMethodSignatures.get(
+        parentName.toUpperCase(),
+      ) ?? []) {
+        inheritedMethods.set(methodName, signature);
+      }
+    }
+    for (const method of iface.methods) {
+      inheritedMethods.set(method.name.toUpperCase(), {
+        ...(method.returnType ? { returnType: method.returnType } : {}),
+        parameters: method.parameters.map((parameter) =>
+          makeVarSymbol(parameter, parameter.direction),
+        ),
+      });
+    }
+    symbolTables.interfaceMethodSignatures.set(
+      iface.name.toUpperCase(),
+      inheritedMethods,
+    );
+    try {
+      symbolTables.globalScope.define({
+        name: iface.name,
+        kind: "type",
+        declaration: {
+          kind: "TypeDeclaration",
+          sourceSpan: createDefaultSourceSpan(),
+          name: iface.name,
+          definition: {
+            kind: "TypeReference",
+            sourceSpan: createDefaultSourceSpan(),
+            name: iface.name,
+            isReference: false,
+            referenceKind: "none",
+          },
+        },
+        resolvedType: {
+          typeKind: "elementary",
+          name: iface.name,
+          sizeBits: 0,
+        } as ElementaryType,
+      });
+    } catch (e) {
+      if (!(e instanceof DuplicateSymbolError)) throw e;
+    }
   }
 
   // Register function blocks. The library only ships its public interface
@@ -440,6 +930,91 @@ export function registerLibrarySymbols(
   // inside the compiled archive. The debugger treats library FBs as
   // black boxes for the same reason: only the user-facing API is exposed.
   for (const fb of manifest.functionBlocks) {
+    const parent = fb.extends
+      ? symbolTables.lookupFunctionBlock(fb.extends)
+      : undefined;
+    const mergeVariables = (
+      inherited: VariableSymbol[] | undefined,
+      own: LibraryVarType[],
+      direction: "input" | "output" | "inout",
+    ): VariableSymbol[] => {
+      const result = [...(inherited ?? [])];
+      const names = new Set(
+        result.map((variable) => variable.name.toUpperCase()),
+      );
+      for (const variable of own) {
+        const symbol = makeVarSymbol(variable, direction);
+        const key = symbol.name.toUpperCase();
+        const existing = result.findIndex(
+          (candidate) => candidate.name.toUpperCase() === key,
+        );
+        if (existing >= 0) result[existing] = symbol;
+        else result.push(symbol);
+        names.add(key);
+      }
+      return result;
+    };
+    const inputs = mergeVariables(parent?.inputs, fb.inputs, "input");
+    const outputs = mergeVariables(parent?.outputs, fb.outputs, "output");
+    const inouts = mergeVariables(parent?.inouts, fb.inouts, "inout");
+    const propertyLocals = (fb.properties ?? []).map((property) =>
+      makeVarSymbol({ name: property.name, type: property.type }, "output"),
+    );
+    const locals = mergeVariables(
+      parent?.locals,
+      propertyLocals.map((property) => ({
+        name: property.name,
+        type: property.declaration.type.name,
+      })),
+      "output",
+    );
+    const methodSignatures = new Map(parent?.methodSignatures ?? []);
+    for (const interfaceName of fb.implements ?? []) {
+      for (const [
+        methodName,
+        signature,
+      ] of symbolTables.interfaceMethodSignatures.get(
+        interfaceName.toUpperCase(),
+      ) ?? []) {
+        if (!methodSignatures.has(methodName)) {
+          methodSignatures.set(methodName, signature);
+        }
+      }
+    }
+    for (const method of fb.methods ?? []) {
+      methodSignatures.set(method.name.toUpperCase(), {
+        ...(method.returnType ? { returnType: method.returnType } : {}),
+        parameters: method.parameters.map((parameter) =>
+          makeVarSymbol(parameter, parameter.direction),
+        ),
+      });
+    }
+    const inheritedMethodDeclarations = new Map(
+      (parent?.declaration.methods ?? []).map((method) => [
+        method.name.toUpperCase(),
+        method,
+      ]),
+    );
+    for (const interfaceName of fb.implements ?? []) {
+      const iface = (manifest.interfaces ?? []).find(
+        (candidate) =>
+          candidate.name.toUpperCase() === interfaceName.toUpperCase(),
+      );
+      for (const method of iface?.methods ?? []) {
+        if (!inheritedMethodDeclarations.has(method.name.toUpperCase())) {
+          inheritedMethodDeclarations.set(
+            method.name.toUpperCase(),
+            makeMethodDeclaration(method),
+          );
+        }
+      }
+    }
+    for (const method of fb.methods ?? []) {
+      inheritedMethodDeclarations.set(
+        method.name.toUpperCase(),
+        makeMethodDeclaration(method),
+      );
+    }
     try {
       symbolTables.globalScope.define({
         name: fb.name,
@@ -448,17 +1023,26 @@ export function registerLibrarySymbols(
           kind: "FunctionBlockDeclaration",
           sourceSpan: createDefaultSourceSpan(),
           name: fb.name,
-          isAbstract: false,
-          isFinal: false,
-          varBlocks: [],
-          methods: [],
-          properties: [],
+          isAbstract: fb.isAbstract,
+          isFinal: fb.isFinal,
+          ...(fb.extends ? { extends: fb.extends } : {}),
+          ...(fb.implements ? { implements: [...fb.implements] } : {}),
+          varBlocks: [
+            makeVarBlock("VAR_INPUT", fb.inputs),
+            makeVarBlock("VAR_OUTPUT", fb.outputs),
+            makeVarBlock("VAR_IN_OUT", fb.inouts),
+          ].filter((block) => block.declarations.length > 0),
+          methods: [...inheritedMethodDeclarations.values()],
+          properties: (fb.properties ?? []).map(makePropertyDeclaration),
           body: [],
         },
-        inputs: fb.inputs.map((i) => makeVarSymbol(i, "input")),
-        outputs: fb.outputs.map((o) => makeVarSymbol(o, "output")),
-        inouts: fb.inouts.map((io) => makeVarSymbol(io, "inout")),
-        locals: [],
+        inputs,
+        outputs,
+        inouts,
+        // Properties participate in member type resolution but are excluded
+        // from callable FB formals; the code generator lowers them to accessors.
+        locals,
+        methodSignatures,
       });
     } catch (e) {
       if (!(e instanceof DuplicateSymbolError)) throw e;
@@ -522,9 +1106,9 @@ export function loadStlibArchive(json: unknown): StlibArchive {
   const obj = json as Record<string, unknown>;
 
   // Validate formatVersion
-  if (obj.formatVersion !== 1) {
+  if (obj.formatVersion !== 2) {
     throw new LibraryManifestError(
-      "Invalid stlib archive: 'formatVersion' must be 1",
+      "Invalid stlib archive: 'formatVersion' must be 2",
     );
   }
 
@@ -557,7 +1141,7 @@ export function loadStlibArchive(json: unknown): StlibArchive {
   }
 
   const archive: StlibArchive = {
-    formatVersion: 1,
+    formatVersion: 2,
     manifest,
     chunks: obj.chunks as StlibArchive["chunks"],
     dependencies: obj.dependencies as Array<{ name: string; version: string }>,

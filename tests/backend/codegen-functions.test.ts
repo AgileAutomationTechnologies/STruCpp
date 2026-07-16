@@ -88,6 +88,19 @@ describe("Codegen - Function Calls", () => {
 
       expect(result.cppCode).toContain("ABS(");
     });
+
+    it("should map MEMSET to the runtime intrinsic", () => {
+      const result = compileAndCheck(`
+        PROGRAM Main
+          VAR b : BYTE := 16#AA; written : ULINT; END_VAR
+          written := MEMSET(ADR(b), 0, SIZEOF(b));
+        END_PROGRAM
+      `);
+
+      expect(result.cppCode).toContain("MEMSET(");
+      expect(result.cppCode).toContain("&(B)");
+      expect(result.cppCode).toContain("IEC_SIZEOF(");
+    });
   });
 
   describe("type conversion functions", () => {

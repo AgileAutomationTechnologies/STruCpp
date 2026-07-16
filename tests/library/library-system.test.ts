@@ -127,7 +127,7 @@ describe("Library System", () => {
       );
 
       expect(result.success).toBe(true);
-      expect(result.archive.formatVersion).toBe(1);
+      expect(result.archive.formatVersion).toBe(2);
       expect(result.archive.manifest.name).toBe("math-lib");
       expect(result.archive.chunks.length).toBeGreaterThan(0);
       expect(result.archive.dependencies).toEqual([]);
@@ -365,7 +365,7 @@ describe("Library System", () => {
   describe("loadStlibArchive", () => {
     it("should load a valid StlibArchive from JSON", () => {
       const json = {
-        formatVersion: 1,
+        formatVersion: 2,
         manifest: {
           name: "test-lib",
           version: "1.0.0",
@@ -381,7 +381,7 @@ describe("Library System", () => {
       };
 
       const archive = loadStlibArchive(json);
-      expect(archive.formatVersion).toBe(1);
+      expect(archive.formatVersion).toBe(2);
       expect(archive.manifest.name).toBe("test-lib");
       expect(archive.chunks).toEqual([]);
       expect(archive.dependencies).toEqual([]);
@@ -403,13 +403,13 @@ describe("Library System", () => {
           chunks: [],
           dependencies: [],
         }),
-      ).toThrow("'formatVersion' must be 1");
+      ).toThrow("'formatVersion' must be 2");
     });
 
     it("should reject invalid formatVersion", () => {
       expect(() =>
         loadStlibArchive({
-          formatVersion: 2,
+          formatVersion: 1,
           manifest: {
             name: "lib",
             version: "1.0.0",
@@ -423,13 +423,13 @@ describe("Library System", () => {
           chunks: [],
           dependencies: [],
         }),
-      ).toThrow("'formatVersion' must be 1");
+      ).toThrow("'formatVersion' must be 2");
     });
 
     it("should reject missing manifest", () => {
       expect(() =>
         loadStlibArchive({
-          formatVersion: 1,
+          formatVersion: 2,
           chunks: [],
           dependencies: [],
         }),
@@ -439,7 +439,7 @@ describe("Library System", () => {
     it("should reject missing chunks", () => {
       expect(() =>
         loadStlibArchive({
-          formatVersion: 1,
+          formatVersion: 2,
           manifest: {
             name: "lib",
             version: "1.0.0",
@@ -458,7 +458,7 @@ describe("Library System", () => {
     it("should reject missing dependencies", () => {
       expect(() =>
         loadStlibArchive({
-          formatVersion: 1,
+          formatVersion: 2,
           manifest: {
             name: "lib",
             version: "1.0.0",
@@ -903,7 +903,7 @@ describe("Library System", () => {
 
   describe("loadStlibFromString (browser-safe)", () => {
     const validArchiveJson = JSON.stringify({
-      formatVersion: 1,
+      formatVersion: 2,
       manifest: {
         name: "browser-lib",
         version: "1.0.0",
@@ -920,7 +920,7 @@ describe("Library System", () => {
 
     it("parses a valid .stlib JSON string", () => {
       const archive = loadStlibFromString(validArchiveJson);
-      expect(archive.formatVersion).toBe(1);
+      expect(archive.formatVersion).toBe(2);
       expect(archive.manifest.name).toBe("browser-lib");
     });
 
@@ -946,7 +946,7 @@ describe("Library System", () => {
 
   describe("loadStlibFromBuffer (browser-safe)", () => {
     const validArchiveJson = JSON.stringify({
-      formatVersion: 1,
+      formatVersion: 2,
       manifest: {
         name: "buffer-lib",
         version: "1.0.0",
@@ -969,7 +969,7 @@ describe("Library System", () => {
 
     it("decodes UTF-8 content with multi-byte characters", () => {
       const utf8 = JSON.stringify({
-        formatVersion: 1,
+        formatVersion: 2,
         manifest: {
           name: "utf8-lib",
           version: "1.0.0",
@@ -1008,7 +1008,7 @@ describe("Library System", () => {
       writeFileSync(
         stlibPath,
         JSON.stringify({
-          formatVersion: 1,
+          formatVersion: 2,
           manifest: {
             name: "file-lib",
             version: "1.0.0",
@@ -1033,7 +1033,7 @@ describe("Library System", () => {
       );
 
       const archive = loadStlibFromFile(stlibPath);
-      expect(archive.formatVersion).toBe(1);
+      expect(archive.formatVersion).toBe(2);
       expect(archive.manifest.name).toBe("file-lib");
       expect(archive.chunks).toHaveLength(1);
       expect(archive.chunks[0]!.name).toBe("MYFN");
@@ -1137,7 +1137,7 @@ describe("Library System", () => {
     it("should discover all .stlib files in a directory", () => {
       const dir = freshDir("discover-stlibs");
       const archive1 = {
-        formatVersion: 1,
+        formatVersion: 2,
         manifest: {
           name: "stlib-a",
           version: "1.0.0",
@@ -1152,7 +1152,7 @@ describe("Library System", () => {
         dependencies: [],
       };
       const archive2 = {
-        formatVersion: 1,
+        formatVersion: 2,
         manifest: {
           name: "stlib-b",
           version: "2.0.0",

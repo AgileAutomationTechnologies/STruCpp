@@ -954,6 +954,40 @@ describeIfGpp('C++ Runtime Behavior Tests', () => {
     }
   }
 
+  it('executes MEMSET over an ADR/SIZEOF byte range', () => {
+    const source = `
+      PROGRAM Main
+        VAR
+          b : BYTE := 16#AA;
+          written : ULINT;
+        END_VAR
+        written := MEMSET(ADR(b), 0, SIZEOF(b));
+      END_PROGRAM
+    `;
+    const result = compile(source);
+    expect(result.success, result.errors.map((error) => error.message).join('\n')).toBe(true);
+
+    const run = compileAndRun(
+      result.headerCode,
+      result.cppCode,
+      `
+#include <cstdio>
+int main() {
+    strucpp::Program_MAIN prog;
+    prog.run();
+    printf("b=%u written=%d\\n",
+      static_cast<unsigned>(prog.B.get()),
+      prog.WRITTEN.get() != 0 ? 1 : 0);
+    return 0;
+}
+`,
+      'memset_adr_sizeof',
+    );
+
+    expect(run.success, run.error).toBe(true);
+    expect(run.output).toBe('b=0 written=1');
+  });
+
   it('preserves TwinCAT short-circuit side effects at runtime', () => {
     const source = `
       FUNCTION_BLOCK Probe

@@ -307,6 +307,20 @@ export function isAssignable(target: IECType, source: IECType): boolean {
     return isAssignable(tRef.referencedType, sRef.referencedType);
   }
 
+  // Derived IEC types are nominal. Dependency manifests and local registries
+  // may reconstruct different structural detail for the same named enum or
+  // struct; identical case-insensitive names still denote the same type.
+  const targetName = "name" in target ? String(target.name) : undefined;
+  const sourceName = "name" in source ? String(source.name) : undefined;
+  if (
+    target.typeKind === source.typeKind &&
+    targetName !== undefined &&
+    sourceName !== undefined &&
+    targetName.toUpperCase() === sourceName.toUpperCase()
+  ) {
+    return true;
+  }
+
   // For other types (struct, array, FB), require exact match
   return JSON.stringify(target) === JSON.stringify(source);
 }

@@ -44,6 +44,7 @@ import { resolve, dirname, relative, sep, posix } from "path";
 import { fileURLToPath, pathToFileURL } from "url";
 import { buildIecTypesJson } from "./build-iec-types-json.mjs";
 import { buildIecFunctionBlockContracts } from "./build-iec-function-block-contracts.mjs";
+import { generateBeckhoffVirtualLibraries } from "./generate-beckhoff-virtual-libs.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -162,6 +163,7 @@ function compileAndWrite({
     builtin: config.isBuiltin === true,
     dependencies,
     globalConstants: config.globalConstants,
+    runtimeCapabilities: config.runtimeCapabilities,
   });
 
   if (!result.success) {
@@ -464,13 +466,14 @@ function synthesizeStdFunctionsLibrary({ libDirName, stlibPath }) {
     .sort((a, b) => a.name.localeCompare(b.name));
 
   const archive = {
-    formatVersion: 1,
+    formatVersion: 2,
     manifest: {
       name: config.name,
       version: config.version,
       namespace: config.namespace,
       functions,
       functionBlocks: [],
+      interfaces: [],
       types: [],
       headers: [],
       isBuiltin: config.isBuiltin === true,
@@ -575,7 +578,22 @@ export async function setup() {
     });
   }
 
-  // 5. iec-types.json — canonical base-type registry. Pure metadata
+  // 5. Beckhoff virtual profile — generated exclusively from the committed
+  // normalized catalog, never from the external crawl at package-build time.
+  if (
+    existsSync(
+      resolve(
+        sourcesRoot,
+        "beckhoff-virtual-core",
+        "beckhoff-api-catalog.json",
+      ),
+    )
+  ) {
+    console.log("[rebuild-libs] Generating Beckhoff virtual profile...");
+    generateBeckhoffVirtualLibraries();
+  }
+
+  // 6. iec-types.json — canonical base-type registry. Pure metadata
   //    derived from `src/semantic/iec-types-data.ts`; downstream tools
   //    (OpenPLC Editor's variables table / debugger / XML emitter)
   //    read this rather than maintaining their own type tables.

@@ -135,6 +135,17 @@ describe("iec-std-functions.stlib synthesis", () => {
     expect(shl.variadic).toBeUndefined();
   });
 
+  it("MEMSET exposes pointer, fill byte, and byte-count pins", () => {
+    const memset = fnByName.get("MEMSET")!;
+    expect(memset.returnType).toBe("ULINT");
+    expect(memset.category).toBe("System");
+    expect(memset.parameters).toEqual([
+      { name: "DEST", type: "ANY", direction: "input" },
+      { name: "VALUE", type: "ANY_INT", direction: "input" },
+      { name: "N", type: "ANY_INT", direction: "input" },
+    ]);
+  });
+
   it("functions are sorted alphabetically for diff stability", () => {
     // The synthesis sorts the manifest array so `git diff` on
     // libs/iec-std-functions.stlib stays small when the registry
