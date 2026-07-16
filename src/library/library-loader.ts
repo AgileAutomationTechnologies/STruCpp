@@ -657,6 +657,41 @@ export function loadLibraryManifest(json: unknown): LibraryManifest {
     }
     result.runtimeCapabilities = [...(obj.runtimeCapabilities as string[])];
   }
+  if (Array.isArray(obj.simulationDescriptors)) {
+    const descriptors = obj.simulationDescriptors as Array<
+      Record<string, unknown>
+    >;
+    const seen = new Set<string>();
+    for (let index = 0; index < descriptors.length; index++) {
+      const descriptor = descriptors[index]!;
+      const target = descriptor.target;
+      if (
+        typeof target !== "string" ||
+        target.length === 0 ||
+        !["functionBlock", "function", "method", "property"].includes(
+          String(descriptor.callableKind),
+        ) ||
+        !["pure", "stateful", "resource"].includes(
+          String(descriptor.behavior),
+        ) ||
+        typeof descriptor.family !== "string"
+      ) {
+        throw new LibraryManifestError(
+          `Invalid library manifest: simulationDescriptors[${index}] is malformed`,
+        );
+      }
+      const key = target.toUpperCase();
+      if (seen.has(key)) {
+        throw new LibraryManifestError(
+          `Invalid library manifest: duplicate simulation descriptor ${target}`,
+        );
+      }
+      seen.add(key);
+    }
+    result.simulationDescriptors = obj.simulationDescriptors as NonNullable<
+      LibraryManifest["simulationDescriptors"]
+    >;
+  }
   if (Array.isArray(obj.sourceFiles)) {
     result.sourceFiles = obj.sourceFiles as string[];
   }

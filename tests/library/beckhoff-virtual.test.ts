@@ -47,6 +47,52 @@ describe("Beckhoff virtual compatibility profile", () => {
         (archive) => archive.manifest.name === "additional-function-blocks",
       ),
     ).toBe(false);
+    expect(profile.manifest.capabilities).toContain(
+      "beckhoffVirtualTransparentExecutionV1",
+    );
+    expect(profile.manifest.simulationIdentity).toMatch(
+      /^beckhoff-transparent:[a-f0-9]{64}$/,
+    );
+  });
+
+  it("has an explicit simulation disposition for every virtual callable and support type", () => {
+    const profile = loadLibraryProfile("beckhoff-virtual");
+    const simulationCatalog = JSON.parse(
+      readFileSync(
+        resolve(
+          "libs/sources/beckhoff-virtual-core/beckhoff-simulation-catalog.json",
+        ),
+        "utf8",
+      ),
+    );
+    const expectedTargets = profile.archives.slice(2).flatMap((archive) => [
+      ...archive.manifest.functionBlocks.flatMap((fb) => [
+        `${archive.manifest.displayName?.replace(/ \(Virtual\)$/, "")}.${fb.name}`,
+        ...fb.methods.map(
+          (method) =>
+            `${archive.manifest.displayName?.replace(/ \(Virtual\)$/, "")}.${fb.name}.${method.name}`,
+        ),
+        ...fb.properties.map(
+          (property) =>
+            `${archive.manifest.displayName?.replace(/ \(Virtual\)$/, "")}.${fb.name}.${property.name}`,
+        ),
+      ]),
+      ...archive.manifest.functions.map(
+        (fn) =>
+          `${archive.manifest.displayName?.replace(/ \(Virtual\)$/, "")}.${fn.name}`,
+      ),
+    ]);
+    const catalogTargets = simulationCatalog.descriptors.map(
+      (descriptor: { target: string }) => descriptor.target,
+    );
+    expect(new Set(catalogTargets).size).toBe(catalogTargets.length);
+    expect(catalogTargets.sort()).toEqual(expectedTargets.sort());
+    expect(simulationCatalog.supportTypes).toHaveLength(298);
+    expect(
+      simulationCatalog.supportTypes.every(
+        (type: { disposition?: string }) => Boolean(type.disposition),
+      ),
+    ).toBe(true);
   });
 
   it("round-trips complete v2 OOP metadata", () => {

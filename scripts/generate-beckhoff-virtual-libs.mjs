@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /** Generate deterministic Beckhoff virtual .stlib v2 archives from the catalog. */
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -12,6 +13,10 @@ const catalogPath = resolve(
 const libsDir = resolve(root, "libs");
 const beckhoffLibsDir = resolve(libsDir, "beckhoff-virtual");
 const profilePath = resolve(root, "libs/profiles/beckhoff-virtual.json");
+const simulationCatalogPath = resolve(
+  root,
+  "libs/sources/beckhoff-virtual-core/beckhoff-simulation-catalog.json",
+);
 const catalog = JSON.parse(readFileSync(catalogPath, "utf8"));
 
 const ELEMENTARY = new Set([
@@ -59,6 +64,7 @@ const RUNTIME_CAPABILITIES = [
   "database-tables",
   "diagnostics",
   "fault-injection",
+  "beckhoffVirtualTransparentExecutionV1",
 ];
 
 function libraryId(name) {
@@ -793,21 +799,49 @@ function payloadCandidate(variables) {
   );
 }
 
-function fbHeader(fb, library) {
-  const fields = [...fb.inputs, ...fb.outputs, ...fb.inouts];
-  const bases = [fb.extends, ...(fb.implements ?? [])]
-    .filter(Boolean)
-    .map((base) => `public ${base}`);
-  const lines = [
-    `class ${fb.name}${bases.length ? ` : ${bases.join(", ")}` : ""} {`,
-    "public:",
-  ];
-  for (const field of fields)
-    lines.push(`    ${cppType(field)} ${field.name}{};`);
-  for (const property of fb.properties)
-    lines.push(
-      `    ${cppPrimitive(property.type)} __property_${property.name}{};`,
-    );
+function fieldByName(fields, name) {
+  if (!name) return undefined;
+  return fields.find((field) => field.name === name);
+}
+
+function resourceKeyDescriptor(fb, library) {
+  const axis = fb.inouts.find(
+    (field) => field.type.toUpperCase() === "AXIS_REF",
+  );
+  if (axis) return { kind: "axisAds", input: axis.name };
+  const handle = fb.inputs.find((input) =>
+    /^(?:hFile|hHandle|nHandle)$/i.test(input.name),
+  );
+  if (handle) return { kind: "handle", input: handle.name };
+  const inputs = fb.inputs
+    .filter(
+      (input) =>
+        RESOURCE_NAME.test(input.name) &&
+        !input.arrayDimensions &&
+        !input.referenceKind &&
+        !/^e[A-Z_]/.test(input.name) &&
+        !structTypes.has(input.type.toUpperCase()) &&
+        !enumTypes.has(input.type.toUpperCase()) &&
+        !callableTypeNames.has(input.type.toUpperCase()),
+    )
+    .slice(0, 4)
+    .map((input) => input.name);
+  return inputs.length > 0
+    ? { kind: "inputs", inputs }
+    : { kind: "instance", value: `${library}.${fb.name}` };
+}
+
+function motionAction(name) {
+  if (/^MC_Power$/i.test(name)) return "power";
+  if (/reset/i.test(name)) return "reset";
+  if (/(?:stop|halt|abort)/i.test(name)) return "stop";
+  if (/absolute/i.test(name)) return "moveAbsolute";
+  if (/(?:relative|additive)/i.test(name)) return "moveRelative";
+  if (/velocity/i.test(name)) return "velocity";
+  return "observe";
+}
+
+function describeFunctionBlock(fb, library) {
   const operation = virtualOperation(fb, library);
   const trigger =
     fb.inputs.find((input) =>
@@ -837,15 +871,6 @@ function fbHeader(fb, library) {
   const axis = fb.inouts.find(
     (field) => field.type.toUpperCase() === "AXIS_REF",
   );
-  const targetPosition = fb.inputs.find((field) =>
-    /^position$/i.test(field.name),
-  );
-  const targetDistance = fb.inputs.find((field) =>
-    /^distance$/i.test(field.name),
-  );
-  const targetVelocity = fb.inputs.find((field) =>
-    /^velocity$/i.test(field.name),
-  );
   const payloadInput = payloadCandidate(fb.inputs);
   const payloadOutput = payloadCandidate(fb.outputs);
   const handleOutput = fb.outputs.find((output) =>
@@ -860,7 +885,218 @@ function fbHeader(fb, library) {
   const eofOutput = fb.outputs.find((output) =>
     /^(?:bEOF|EOF)$/i.test(output.name),
   );
-  const resourceKey = resourceKeyExpression(fb, library);
+  const family = axis
+    ? "motion-axis"
+    : operation !== "None"
+      ? `${library.toLowerCase()}-resource`
+      : trigger
+        ? `${library.toLowerCase()}-state-machine`
+        : `${library.toLowerCase()}-deterministic`;
+  return {
+    target: `${library}.${fb.name}`,
+    callableKind: "functionBlock",
+    behavior: axis || operation !== "None" ? "resource" : trigger ? "stateful" : "pure",
+    family,
+    ...(trigger
+      ? {
+          trigger: {
+            input: trigger.name,
+            mode: /^MC_Power$/i.test(fb.name) ? "level" : "rising",
+            ...(busy ? { busy: busy.name } : {}),
+            ...(done ? { done: done.name } : {}),
+            ...(error ? { error: error.name } : {}),
+            ...(errorId ? { errorId: errorId.name } : {}),
+            latencyScans: 1,
+          },
+        }
+      : {}),
+    ...(axis || operation !== "None"
+      ? {
+          resource: {
+            operation,
+            key: resourceKeyDescriptor(fb, library),
+            ...(payloadInput ? { payloadInput: payloadInput.name } : {}),
+            ...(payloadOutput ? { payloadOutput: payloadOutput.name } : {}),
+            ...(handleOutput ? { handleOutput: handleOutput.name } : {}),
+            ...(countInput ? { countInput: countInput.name } : {}),
+            ...(countOutput ? { countOutput: countOutput.name } : {}),
+            ...(eofOutput ? { eofOutput: eofOutput.name } : {}),
+          },
+        }
+      : {}),
+    ...(axis
+      ? {
+          motion: {
+            axis: axis.name,
+            action: motionAction(fb.name),
+            ...(fb.inputs.find((field) => /^position$/i.test(field.name))
+              ? { positionInput: fb.inputs.find((field) => /^position$/i.test(field.name)).name }
+              : {}),
+            ...(fb.inputs.find((field) => /^distance$/i.test(field.name))
+              ? { distanceInput: fb.inputs.find((field) => /^distance$/i.test(field.name)).name }
+              : {}),
+            ...(fb.inputs.find((field) => /^velocity$/i.test(field.name))
+              ? { velocityInput: fb.inputs.find((field) => /^velocity$/i.test(field.name)).name }
+              : {}),
+          },
+        }
+      : {}),
+  };
+}
+
+function buildSimulationCatalog() {
+  const descriptors = [];
+  for (const library of catalog.libraries.filter(
+    (name) => name !== "Tc2_Standard" && !name.startsWith("TwinCAT_"),
+  )) {
+    const { fbs, functions } = collectApis(library);
+    for (const fb of fbs) {
+      descriptors.push(describeFunctionBlock(fb, library));
+      for (const method of fb.methods) {
+        descriptors.push({
+          target: `${library}.${fb.name}.${method.name}`,
+          callableKind: "method",
+          behavior: "stateful",
+          family: `${library.toLowerCase()}-method`,
+        });
+      }
+      for (const property of fb.properties) {
+        descriptors.push({
+          target: `${library}.${fb.name}.${property.name}`,
+          callableKind: "property",
+          behavior: "stateful",
+          family: `${library.toLowerCase()}-property`,
+          propertyAccess: {
+            readable: property.readable,
+            writable: property.writable,
+          },
+        });
+      }
+    }
+    for (const fn of functions) {
+      descriptors.push({
+        target: `${library}.${fn.name}`,
+        callableKind: "function",
+        behavior: "pure",
+        family: `${library.toLowerCase()}-deterministic`,
+      });
+    }
+  }
+  descriptors.sort((left, right) => left.target.localeCompare(right.target));
+  const supportTypes = allTypes
+    .map((type) => ({ name: type.name, disposition: "virtual-runtime-type" }))
+    .sort((left, right) => left.name.localeCompare(right.name));
+  return {
+    schemaVersion: 1,
+    profile: "beckhoff-virtual-v1",
+    capability: "beckhoffVirtualTransparentExecutionV1",
+    defaultLatencyScans: 1,
+    descriptors,
+    supportTypes,
+  };
+}
+
+function expectedSimulationTargets() {
+  const targets = [];
+  for (const library of catalog.libraries.filter(
+    (name) => name !== "Tc2_Standard" && !name.startsWith("TwinCAT_"),
+  )) {
+    const { fbs, functions } = collectApis(library);
+    for (const fb of fbs) {
+      targets.push(`${library}.${fb.name}`);
+      targets.push(...fb.methods.map((method) => `${library}.${fb.name}.${method.name}`));
+      targets.push(...fb.properties.map((property) => `${library}.${fb.name}.${property.name}`));
+    }
+    targets.push(...functions.map((fn) => `${library}.${fn.name}`));
+  }
+  return targets.sort();
+}
+
+function loadSimulationCatalog() {
+  if (process.argv.includes("--refresh-simulation-catalog")) {
+    const generated = buildSimulationCatalog();
+    writeFileSync(simulationCatalogPath, `${JSON.stringify(generated, null, 2)}\n`);
+    return generated;
+  }
+  if (!existsSync(simulationCatalogPath)) {
+    throw new Error(
+      `Missing committed simulation catalog: ${simulationCatalogPath}. Run this script with --refresh-simulation-catalog.`,
+    );
+  }
+  return JSON.parse(readFileSync(simulationCatalogPath, "utf8"));
+}
+
+const simulationCatalog = loadSimulationCatalog();
+const simulationDescriptorByTarget = new Map(
+  simulationCatalog.descriptors.map((descriptor) => [descriptor.target, descriptor]),
+);
+const expectedTargets = expectedSimulationTargets();
+const missingTargets = expectedTargets.filter(
+  (target) => !simulationDescriptorByTarget.has(target),
+);
+const unexpectedTargets = simulationCatalog.descriptors
+  .map((descriptor) => descriptor.target)
+  .filter((target) => !expectedTargets.includes(target));
+const missingSupportTypes = allTypes.filter(
+  (type) => !simulationCatalog.supportTypes.some(
+    (support) => support.name.toUpperCase() === type.name.toUpperCase() && support.disposition,
+  ),
+);
+if (missingTargets.length || unexpectedTargets.length || missingSupportTypes.length) {
+  throw new Error(
+    `Beckhoff simulation catalog coverage mismatch: missing=${missingTargets.join(",")}; unexpected=${unexpectedTargets.join(",")}; supportTypes=${missingSupportTypes.map((type) => type.name).join(",")}`,
+  );
+}
+
+function resourceKeyExpressionFromDescriptor(resource) {
+  if (!resource) return 'std::string()';
+  const key = resource.key;
+  if (key.kind === "axisAds") {
+    return `beckhoff_virtual::axisResourceKey(static_cast<std::uint32_t>(${key.input}.ADS))`;
+  }
+  if (key.kind === "handle") {
+    return `beckhoff_virtual::environment().resourceForHandle(static_cast<std::uint32_t>(${key.input}))`;
+  }
+  if (key.kind === "inputs") {
+    return `beckhoff_virtual::joinResourceKey({${key.inputs.map((input) => `beckhoff_virtual::resourceKey(${input})`).join(", ")}})`;
+  }
+  return JSON.stringify(key.value);
+}
+
+function fbHeader(fb, library) {
+  const fields = [...fb.inputs, ...fb.outputs, ...fb.inouts];
+  const bases = [fb.extends, ...(fb.implements ?? [])]
+    .filter(Boolean)
+    .map((base) => `public ${base}`);
+  const lines = [
+    `class ${fb.name}${bases.length ? ` : ${bases.join(", ")}` : ""} {`,
+    "public:",
+  ];
+  for (const field of fields)
+    lines.push(`    ${cppType(field)} ${field.name}{};`);
+  for (const property of fb.properties)
+    lines.push(
+      `    ${cppPrimitive(property.type)} __property_${property.name}{};`,
+    );
+  const descriptor = simulationDescriptorByTarget.get(`${library}.${fb.name}`);
+  if (!descriptor) throw new Error(`Missing simulation descriptor for ${library}.${fb.name}`);
+  const operation = descriptor.resource?.operation ?? "None";
+  const trigger = fieldByName(fb.inputs, descriptor.trigger?.input);
+  const busy = fieldByName(fb.outputs, descriptor.trigger?.busy);
+  const done = fieldByName(fb.outputs, descriptor.trigger?.done);
+  const error = fieldByName(fb.outputs, descriptor.trigger?.error);
+  const errorId = fieldByName(fb.outputs, descriptor.trigger?.errorId);
+  const axis = fieldByName(fb.inouts, descriptor.motion?.axis);
+  const targetPosition = fieldByName(fb.inputs, descriptor.motion?.positionInput);
+  const targetDistance = fieldByName(fb.inputs, descriptor.motion?.distanceInput);
+  const targetVelocity = fieldByName(fb.inputs, descriptor.motion?.velocityInput);
+  const payloadInput = fieldByName(fb.inputs, descriptor.resource?.payloadInput);
+  const payloadOutput = fieldByName(fb.outputs, descriptor.resource?.payloadOutput);
+  const handleOutput = fieldByName(fb.outputs, descriptor.resource?.handleOutput);
+  const countOutput = fieldByName(fb.outputs, descriptor.resource?.countOutput);
+  const countInput = fieldByName(fb.inputs, descriptor.resource?.countInput);
+  const eofOutput = fieldByName(fb.outputs, descriptor.resource?.eofOutput);
+  const resourceKey = resourceKeyExpressionFromDescriptor(descriptor.resource);
   lines.push("    bool __virtualPreviousTrigger = false;");
   lines.push("    bool __virtualPending = false;");
   lines.push("    std::uint32_t __virtualDelayScans = 0;");
@@ -870,28 +1106,24 @@ function fbHeader(fb, library) {
   lines.push(`        const std::string __resourceKey = ${resourceKey};`);
   if (axis) {
     lines.push(
-      `        auto __axisState = beckhoff_virtual::environment().axes.find(static_cast<std::uint32_t>(${axis.name}.ADS));`,
+      `        auto& __axisState = beckhoff_virtual::environment().axis(static_cast<std::uint32_t>(${axis.name}.ADS));`,
     );
     lines.push(
-      "        if (__axisState != beckhoff_virtual::environment().axes.end()) {",
+      `        ${axis.name}.Position = __axisState.position;`,
     );
     lines.push(
-      `            ${axis.name}.Position = __axisState->second.position;`,
+      `        ${axis.name}.Velocity = __axisState.velocity;`,
     );
     lines.push(
-      `            ${axis.name}.Velocity = __axisState->second.velocity;`,
+      `        ${axis.name}.Acceleration = __axisState.acceleration;`,
     );
     lines.push(
-      `            ${axis.name}.Acceleration = __axisState->second.acceleration;`,
+      `        ${axis.name}.Enabled = __axisState.enabled;`,
     );
+    lines.push(`        ${axis.name}.Error = __axisState.error;`);
     lines.push(
-      `            ${axis.name}.Enabled = __axisState->second.enabled;`,
+      `        ${axis.name}.ErrorID = __axisState.errorId;`,
     );
-    lines.push(`            ${axis.name}.Error = __axisState->second.error;`);
-    lines.push(
-      `            ${axis.name}.ErrorID = __axisState->second.errorId;`,
-    );
-    lines.push("        }");
   }
   if (trigger) {
     lines.push(
@@ -961,41 +1193,41 @@ function fbHeader(fb, library) {
       lines.push(
         `                if (__virtualErrorId == 0) ${axis.name}.Velocity = ${targetVelocity.name};`,
       );
-    if (axis && /(?:stop|halt)/i.test(fb.name))
+    if (axis && descriptor.motion?.action === "stop")
       lines.push(
         `                if (__virtualErrorId == 0) ${axis.name}.Velocity = 0.0;`,
       );
-    if (axis && /reset/i.test(fb.name)) {
+    if (axis && descriptor.motion?.action === "reset") {
       lines.push(
         `                if (__virtualErrorId == 0) { ${axis.name}.Error = false; ${axis.name}.ErrorID = 0; }`,
       );
     }
-    if (axis && /^MC_Power$/i.test(fb.name)) {
+    if (axis && descriptor.motion?.action === "power") {
       lines.push(
         `                if (__virtualErrorId == 0) ${axis.name}.Enabled = __trigger;`,
       );
     }
     if (axis) {
       lines.push(
-        "                if (__virtualErrorId == 0 && __axisState != beckhoff_virtual::environment().axes.end()) {",
+        "                if (__virtualErrorId == 0) {",
       );
       lines.push(
-        `                    __axisState->second.position = static_cast<double>(${axis.name}.Position);`,
+        `                    __axisState.position = static_cast<double>(${axis.name}.Position);`,
       );
       lines.push(
-        `                    __axisState->second.velocity = static_cast<double>(${axis.name}.Velocity);`,
+        `                    __axisState.velocity = static_cast<double>(${axis.name}.Velocity);`,
       );
       lines.push(
-        `                    __axisState->second.acceleration = static_cast<double>(${axis.name}.Acceleration);`,
+        `                    __axisState.acceleration = static_cast<double>(${axis.name}.Acceleration);`,
       );
       lines.push(
-        `                    __axisState->second.enabled = static_cast<bool>(${axis.name}.Enabled);`,
+        `                    __axisState.enabled = static_cast<bool>(${axis.name}.Enabled);`,
       );
       lines.push(
-        `                    __axisState->second.error = static_cast<bool>(${axis.name}.Error);`,
+        `                    __axisState.error = static_cast<bool>(${axis.name}.Error);`,
       );
       lines.push(
-        `                    __axisState->second.errorId = static_cast<std::uint32_t>(${axis.name}.ErrorID);`,
+        `                    __axisState.errorId = static_cast<std::uint32_t>(${axis.name}.ErrorID);`,
       );
       lines.push("                }");
     }
@@ -1003,12 +1235,12 @@ function fbHeader(fb, library) {
     lines.push("            }");
     lines.push("        }");
     lines.push("        __virtualPreviousTrigger = __trigger;");
-    if (axis && /^MC_Power$/i.test(fb.name)) {
+    if (axis && descriptor.motion?.action === "power") {
       lines.push("        if (!__trigger) {");
       lines.push(`            ${axis.name}.Enabled = false;`);
       if (done) lines.push(`            ${done.name} = false;`);
       lines.push(
-        "            if (__axisState != beckhoff_virtual::environment().axes.end()) __axisState->second.enabled = false;",
+        "            __axisState.enabled = false;",
       );
       lines.push("        }");
     }
@@ -1114,6 +1346,7 @@ function buildCoreArchive() {
       headers: ["beckhoff_virtual.hpp"],
       isBuiltin: true,
       runtimeCapabilities: RUNTIME_CAPABILITIES,
+      simulationDescriptors: [],
     },
     chunks: [...typeChunks, ...interfaceChunks],
     dependencies: [],
@@ -1193,7 +1426,13 @@ function buildLibraryArchive(library) {
       types: [],
       headers: [],
       isBuiltin: true,
-      runtimeCapabilities: ["beckhoff-virtual-v1"],
+      runtimeCapabilities: [
+        "beckhoff-virtual-v1",
+        "beckhoffVirtualTransparentExecutionV1",
+      ],
+      simulationDescriptors: simulationCatalog.descriptors.filter(
+        (descriptor) => descriptor.target.startsWith(`${library}.`),
+      ),
     },
     chunks,
     dependencies: [{ name: "beckhoff-virtual-core", version: "1.0.0" }],
@@ -1205,28 +1444,42 @@ export function generateBeckhoffVirtualLibraries() {
   mkdirSync(dirname(profilePath), { recursive: true });
   const core = buildCoreArchive();
   mkdirSync(beckhoffLibsDir, { recursive: true });
-  writeFileSync(
-    resolve(beckhoffLibsDir, "beckhoff-virtual-core.stlib"),
-    `${JSON.stringify(core, null, 2)}\n`,
-  );
+  const generatedArchives = [core];
   const vendorLibraries = catalog.libraries.filter(
     (name) => name !== "Tc2_Standard" && !name.startsWith("TwinCAT_"),
   );
   const archiveNames = [];
   for (const library of vendorLibraries) {
     const archive = buildLibraryArchive(library);
+    generatedArchives.push(archive);
     archiveNames.push(archive.manifest.name);
     writeFileSync(
       resolve(beckhoffLibsDir, `${archive.manifest.name}.stlib`),
       `${JSON.stringify(archive, null, 2)}\n`,
     );
   }
+  writeFileSync(
+    resolve(beckhoffLibsDir, "beckhoff-virtual-core.stlib"),
+    `${JSON.stringify(core, null, 2)}\n`,
+  );
+  const simulationIdentity = `beckhoff-transparent:${createHash("sha256")
+    .update("beckhoff-virtual-runtime-v2\0")
+    .update(readFileSync(catalogPath))
+    .update("\0")
+    .update(readFileSync(simulationCatalogPath))
+    .update("\0")
+    .update(JSON.stringify(generatedArchives))
+    .digest("hex")}`;
   const profile = {
     schemaVersion: 1,
     name: "beckhoff-virtual",
     runtimeProfile: "beckhoff-virtual-v1",
     coverageCatalog:
       "../sources/beckhoff-virtual-core/beckhoff-api-catalog.json",
+    simulationCatalog:
+      "../sources/beckhoff-virtual-core/beckhoff-simulation-catalog.json",
+    simulationIdentity,
+    capabilities: ["beckhoffVirtualTransparentExecutionV1"],
     excludedLibraries: ["additional-function-blocks"],
     libraries: [
       { name: "iec-standard-fb", path: "iec-standard-fb.stlib" },

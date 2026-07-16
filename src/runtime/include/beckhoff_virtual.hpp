@@ -5,6 +5,7 @@
 #include <initializer_list>
 #include <map>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -93,6 +94,26 @@ struct Environment {
     return resources.find(key) != resources.end();
   }
 
+  AxisState& axis(std::uint32_t ads) {
+    resources.try_emplace("axis:" + std::to_string(ads), "{}");
+    return axes.try_emplace(ads, AxisState{}).first->second;
+  }
+
+  bool isValidResourceKey(const std::string& key) const {
+    if (key.empty()) return false;
+    if (key.rfind("\\\\", 0) == 0 || key.rfind("//", 0) == 0) return false;
+    std::string_view view(key);
+    std::size_t start = 0;
+    while (start <= view.size()) {
+      const auto end = view.find_first_of("\\/", start);
+      const auto part = view.substr(start, end - start);
+      if (part == "..") return false;
+      if (end == std::string_view::npos) break;
+      start = end + 1;
+    }
+    return true;
+  }
+
   InvocationResult beginCall(
       const std::string& target,
       const std::string& resourceKey = {}) {
@@ -119,14 +140,17 @@ struct Environment {
       ResourceOperation operation) {
     auto result = beginCall(target, resourceKey);
     if (result.errorId != 0) return result;
-    if (resourceKey.empty()) return {result.delayScans, ERR_INVALID};
+    if (!isValidResourceKey(resourceKey)) {
+      return {result.delayScans, ERR_INVALID};
+    }
     const bool exists = hasResource(resourceKey);
-    if (operation == ResourceOperation::Read ||
-        operation == ResourceOperation::Remove) {
+    if (operation == ResourceOperation::Remove) {
       if (!exists) return {result.delayScans, ERR_MISSING};
-    } else if (operation == ResourceOperation::Connect) {
-      if (!exists) return {result.delayScans, ERR_UNCONFIGURED};
-    } else if (operation == ResourceOperation::Write && !exists) {
+    } else if ((operation == ResourceOperation::Read ||
+                operation == ResourceOperation::Connect ||
+                operation == ResourceOperation::Write) && !exists) {
+      // Transparent test execution provisions valid resources on first use.
+      // Explicit maintainer fixtures can still seed payloads and fault rules.
       resources[resourceKey] = "{}";
     }
     if (operation == ResourceOperation::Remove && exists) {

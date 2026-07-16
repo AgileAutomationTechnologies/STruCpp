@@ -23,21 +23,28 @@ const gpp = findGpp();
 const validationRoot = resolve("tests/st-validation/beckhoff_virtual");
 const cli = resolve("dist/node/cli.js");
 
-function runVirtualTest(testFile: string, fixtureFile: string): string {
-  const result = spawnSync(
-    process.execPath,
-    [
-      cli,
-      resolve(validationRoot, "subject.st"),
+function runVirtualTest(testFile: string, fixtureFile?: string): string {
+  const args = [
+    cli,
+    resolve(validationRoot, "subject.st"),
+    "--gpp",
+    gpp!,
+    "--test",
+    resolve(validationRoot, testFile),
+  ];
+  if (fixtureFile) {
+    args.splice(
+      2,
+      0,
       "--library-profile",
       "beckhoff-virtual",
       "--virtual-fixture",
       resolve(validationRoot, fixtureFile),
-      "--gpp",
-      gpp!,
-      "--test",
-      resolve(validationRoot, testFile),
-    ],
+    );
+  }
+  const result = spawnSync(
+    process.execPath,
+    args,
     { encoding: "utf8", timeout: 120_000 },
   );
   const output = `${result.stdout ?? ""}\n${result.stderr ?? ""}`;
@@ -47,6 +54,11 @@ function runVirtualTest(testFile: string, fixtureFile: string): string {
 }
 
 describe.skipIf(!gpp)("Beckhoff virtual native profile", () => {
+  it("implicitly provisions the profile and resources for ordinary tests", () => {
+    const output = runVirtualTest("behavior.st");
+    expect(output).toContain("2 passed, 0 failed");
+  });
+
   it("links the whole profile and executes motion and sandbox services", () => {
     const output = runVirtualTest("behavior.st", "fixture.json");
     expect(output).toContain("2 passed, 0 failed");

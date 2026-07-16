@@ -83,6 +83,7 @@ interface CLIOptions {
   optimizationLevel: 0 | 1 | 2;
   showHelp: boolean;
   showVersion: boolean;
+  showSimulationInfo: boolean;
   build: boolean;
   gpp: string;
   cc: string;
@@ -155,6 +156,7 @@ function parseArgs(args: string[]): CLIOptions {
     optimizationLevel: 0,
     showHelp: false,
     showVersion: false,
+    showSimulationInfo: false,
     build: false,
     gpp: "g++",
     cc: process.platform === "win32" ? "gcc" : "cc",
@@ -177,6 +179,8 @@ function parseArgs(args: string[]): CLIOptions {
       options.showHelp = true;
     } else if (arg === "-v" || arg === "--version") {
       options.showVersion = true;
+    } else if (arg === "--simulation-info") {
+      options.showSimulationInfo = true;
     } else if (arg === "-d" || arg === "--debug") {
       options.debug = true;
     } else if (arg === "--no-line-mapping") {
@@ -332,6 +336,7 @@ Options:
   -L, --lib-path <path>     Library search path (repeatable)
   --library-profile <name>  Load a locked bundled library profile
   --virtual-fixture <json>  Reset a Beckhoff virtual fixture before each test
+  --simulation-info         Print the qualified internal Beckhoff simulator identity
   --no-default-libs         Do not auto-add bundled library paths
   -D, --define NAME=VALUE   Define a global constant (repeatable)
   -v, --version             Show version
@@ -626,6 +631,12 @@ function compileLibraryMode(options: CLIOptions): void {
  */
 function runTestMode(options: CLIOptions): void {
   ensureCompilersAvailable(options, false);
+
+  // Test execution always resolves against the transparent Beckhoff profile.
+  // This is intentionally implicit so TwinCAT test authors never need to know
+  // about the offline simulator. Explicit profiles remain available to
+  // compiler maintainers for focused runtime verification.
+  options.libraryProfile ??= "beckhoff-virtual";
 
   let virtualFixture:
     | import("../testing/virtual-fixture.js").BeckhoffVirtualFixture
@@ -1024,6 +1035,38 @@ async function main(): Promise<void> {
 
   if (options.showVersion) {
     console.log(`STruC++ version ${getVersion()}`);
+    process.exit(0);
+  }
+
+  if (options.showSimulationInfo) {
+    const loaded = loadLibraryProfile("beckhoff-virtual");
+    const descriptors = loaded.archives.flatMap(
+      (archive) => archive.manifest.simulationDescriptors ?? [],
+    );
+    const descriptorTargets = new Set(
+      descriptors.map((descriptor) => descriptor.target.toUpperCase()),
+    );
+    const capability = "beckhoffVirtualTransparentExecutionV1";
+    console.log(
+      JSON.stringify({
+        schemaVersion: 1,
+        profile: loaded.manifest.name,
+        runtimeProfile: loaded.manifest.runtimeProfile,
+        simulationIdentity: loaded.manifest.simulationIdentity,
+        capabilities: loaded.manifest.capabilities ?? [],
+        descriptorCount: descriptors.length,
+        supportTypeCount:
+          (loaded.archives[1]?.manifest.types.length ?? 0) +
+          (loaded.archives[1]?.manifest.interfaces.length ?? 0),
+        qualified:
+          descriptors.length > 0 &&
+          descriptorTargets.size === descriptors.length &&
+          loaded.manifest.capabilities?.includes(capability) === true &&
+          /^beckhoff-transparent:[a-f0-9]{64}$/.test(
+            loaded.manifest.simulationIdentity ?? "",
+          ),
+      }),
+    );
     process.exit(0);
   }
 

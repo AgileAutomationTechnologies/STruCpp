@@ -1547,8 +1547,8 @@ inline IEC_ULINT MEMSET(IEC_ULINT dest, IEC_ULINT value, std::size_t n) {
 }
 
 /** Raw-pointer overload for direct MEMSET(ADR(value), ...). */
-template<typename Dest>
-inline IEC_ULINT MEMSET(Dest* dest, IEC_ULINT value, std::size_t n) {
+template<typename Dest, typename Value>
+inline IEC_ULINT MEMSET(Dest* dest, Value value, std::size_t n) {
     void* destAddress = detail::memory_data_pointer(dest);
     const auto byteValue = static_cast<int>(
         static_cast<std::uint64_t>(value) & static_cast<std::uint64_t>(0xFF));

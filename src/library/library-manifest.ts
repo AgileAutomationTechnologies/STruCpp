@@ -208,6 +208,56 @@ export interface LibraryGlobalEntry {
 }
 
 /**
+ * Internal behavior contract for a callable supplied by a virtual library.
+ * These records are compiler/runtime metadata; they are deliberately not part
+ * of the Structured Text call surface exposed to test authors.
+ */
+export interface LibrarySimulationDescriptor {
+  target: string;
+  callableKind: "functionBlock" | "function" | "method" | "property";
+  behavior: "pure" | "stateful" | "resource";
+  family: string;
+  trigger?: {
+    input: string;
+    mode: "rising" | "level" | "cyclic";
+    busy?: string;
+    done?: string;
+    error?: string;
+    errorId?: string;
+    latencyScans: number;
+  };
+  resource?: {
+    operation: "None" | "Read" | "Write" | "Connect" | "Remove";
+    key:
+      | { kind: "axisAds"; input: string }
+      | { kind: "handle"; input: string }
+      | { kind: "inputs"; inputs: string[] }
+      | { kind: "instance"; value: string };
+    payloadInput?: string;
+    payloadOutput?: string;
+    handleOutput?: string;
+    countInput?: string;
+    countOutput?: string;
+    eofOutput?: string;
+  };
+  motion?: {
+    axis: string;
+    action:
+      | "power"
+      | "moveAbsolute"
+      | "moveRelative"
+      | "velocity"
+      | "stop"
+      | "reset"
+      | "observe";
+    positionInput?: string;
+    distanceInput?: string;
+    velocityInput?: string;
+  };
+  propertyAccess?: { readable: boolean; writable: boolean };
+}
+
+/**
  * Library manifest describing a compiled library's public interface.
  */
 export interface LibraryManifest {
@@ -243,6 +293,8 @@ export interface LibraryManifest {
   isBuiltin: boolean;
   /** Allowlisted compiler/runtime features required by this archive. */
   runtimeCapabilities?: string[];
+  /** Validated internal virtual-runtime behavior contracts. */
+  simulationDescriptors?: LibrarySimulationDescriptor[];
   /** Original ST source files (for ST libraries) */
   sourceFiles?: string[];
 }

@@ -3,6 +3,11 @@
   "name": "beckhoff-virtual",
   "runtimeProfile": "beckhoff-virtual-v1",
   "coverageCatalog": "../sources/beckhoff-virtual-core/beckhoff-api-catalog.json",
+  "simulationCatalog": "../sources/beckhoff-virtual-core/beckhoff-simulation-catalog.json",
+  "simulationIdentity": "beckhoff-transparent:77b11ee033ffbcaad6f5615f315abfa85a2d2d54b2ed88d46e9392de2f06bc97",
+  "capabilities": [
+    "beckhoffVirtualTransparentExecutionV1"
+  ],
   "excludedLibraries": [
     "additional-function-blocks"
   ],

@@ -11,6 +11,9 @@ export interface LibraryProfileManifest {
   name: string;
   runtimeProfile?: string;
   coverageCatalog?: string;
+  simulationCatalog?: string;
+  simulationIdentity?: string;
+  capabilities?: string[];
   excludedLibraries: string[];
   libraries: LibraryProfileEntry[];
 }
@@ -67,6 +70,15 @@ export function parseLibraryProfile(
       : {}),
     ...(typeof value.coverageCatalog === "string"
       ? { coverageCatalog: value.coverageCatalog }
+      : {}),
+    ...(typeof value.simulationCatalog === "string"
+      ? { simulationCatalog: value.simulationCatalog }
+      : {}),
+    ...(typeof value.simulationIdentity === "string"
+      ? { simulationIdentity: value.simulationIdentity }
+      : {}),
+    ...(Array.isArray(value.capabilities)
+      ? { capabilities: value.capabilities.map(String) }
       : {}),
     excludedLibraries: value.excludedLibraries.map(String),
     libraries,
