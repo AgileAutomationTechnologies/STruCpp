@@ -31,7 +31,11 @@ import type {
 } from "../frontend/ast.js";
 import type { CompileError, SourceSpan } from "../types.js";
 import { StdFunctionRegistry } from "./std-function-registry.js";
-import { Scope, SymbolTables } from "./symbol-table.js";
+import {
+  Scope,
+  SymbolTables,
+  resolveFunctionBlockFormalVariable,
+} from "./symbol-table.js";
 import type { FunctionSymbol } from "./symbol-table.js";
 import { TypeChecker } from "./type-checker.js";
 import {
@@ -364,6 +368,16 @@ export class SemanticAnalyzer {
           "functionBlock",
           fbDecl.name,
         );
+        const fbSymbol = this.symbolTables.lookupFunctionBlock(fbDecl.name);
+        if (fbSymbol) {
+          const members = scope.getSymbolsByKind("variable");
+          fbSymbol.inputs = members.filter((member) => member.isInput);
+          fbSymbol.outputs = members.filter((member) => member.isOutput);
+          fbSymbol.inouts = members.filter((member) => member.isInOut);
+          fbSymbol.locals = members.filter(
+            (member) => !member.isInput && !member.isOutput && !member.isInOut,
+          );
+        }
 
         // Create method scopes (parent = FB scope for correct lookup chain)
         for (const method of fbDecl.methods) {
@@ -1623,6 +1637,7 @@ export class SemanticAnalyzer {
       expr.kind === "FunctionCallExpression" &&
       !expr.functionName.includes(".")
     ) {
+      this.checkFunctionBlockInvocationArgs(expr, varTypeMap);
       this.checkStdFunctionArgs(expr);
     }
 
@@ -1643,6 +1658,128 @@ export class SemanticAnalyzer {
       }
     } else if (expr.kind === "ParenthesizedExpression") {
       this.validateExpression(expr.expression, varTypeMap, ast);
+    }
+  }
+
+  /**
+   * Validate named FB formals while source spans are still available. Library
+   * aliases resolve to one canonical pin, so assigning both spellings is a
+   * deterministic source error instead of a late C++ member failure.
+   */
+  private checkFunctionBlockInvocationArgs(
+    expr: FunctionCallExpression,
+    varTypeMap: Map<string, string>,
+  ): void {
+    const fbTypeName = varTypeMap.get(expr.functionName.toUpperCase());
+    if (fbTypeName === undefined) return;
+    const fb = this.symbolTables.lookupFunctionBlock(fbTypeName);
+    if (fb === undefined) return;
+
+    const claimed = new Map<string, string>();
+    const declaredFormals: Array<{
+      canonicalName: string;
+      direction: "input" | "output" | "inout";
+    }> = fb.declaration.varBlocks.flatMap((block) => {
+      const direction =
+        block.blockType === "VAR_INPUT"
+          ? "input"
+          : block.blockType === "VAR_OUTPUT"
+            ? "output"
+            : block.blockType === "VAR_IN_OUT"
+              ? "inout"
+              : undefined;
+      if (direction === undefined) return [];
+      return block.declarations.flatMap((declaration) =>
+        declaration.names.map((name) => ({ canonicalName: name, direction })),
+      );
+    });
+    const describeAcceptedVariables = (
+      variables: typeof fb.inputs,
+      direction: "input" | "output" | "inout",
+    ): string => {
+      const descriptions = variables.map((variable) =>
+        variable.aliases && variable.aliases.length > 0
+          ? `${variable.name} (aliases: ${variable.aliases.join(", ")})`
+          : variable.name,
+      );
+      const present = new Set(
+        variables.map((variable) => variable.name.toUpperCase()),
+      );
+      for (const formal of declaredFormals) {
+        if (
+          formal.direction === direction &&
+          !present.has(formal.canonicalName.toUpperCase())
+        ) {
+          descriptions.push(formal.canonicalName);
+        }
+      }
+      return descriptions.length > 0 ? descriptions.join(", ") : "(none)";
+    };
+    const invocationContext = `ST instance '${expr.functionName}' (type '${fb.name}', line `;
+    const acceptedInterface =
+      `Accepted inputs: ${describeAcceptedVariables(fb.inputs, "input")}; ` +
+      `Accepted outputs: ${describeAcceptedVariables(fb.outputs, "output")}; ` +
+      `Accepted in-outs: ${describeAcceptedVariables(fb.inouts, "inout")}.`;
+    for (const arg of expr.arguments) {
+      if (arg.name === undefined || isEnArgument(arg) || isEnoArgument(arg))
+        continue;
+      const symbolResolution = resolveFunctionBlockFormalVariable(fb, arg.name);
+      const declaredResolution = declaredFormals.find(
+        (formal) =>
+          formal.canonicalName.toUpperCase() === arg.name!.toUpperCase(),
+      );
+      const resolved = symbolResolution
+        ? {
+            canonicalName: symbolResolution.canonicalName,
+            direction: symbolResolution.direction,
+          }
+        : declaredResolution;
+      if (!resolved) {
+        this.addError(
+          `Unknown parameter '${arg.name}' for function block '${fb.name}' on ` +
+            `${invocationContext}${arg.sourceSpan.startLine}). ` +
+            acceptedInterface,
+          arg.sourceSpan.startLine,
+          arg.sourceSpan.startCol,
+          arg.sourceSpan.file,
+        );
+        continue;
+      }
+
+      const canonicalUpper = resolved.canonicalName.toUpperCase();
+      const previousSpelling = claimed.get(canonicalUpper);
+      if (previousSpelling !== undefined) {
+        this.addError(
+          `Function block '${fb.name}' parameter '${resolved.canonicalName}' is assigned more than once via '${previousSpelling}' and '${arg.name}' on ` +
+            `${invocationContext}${arg.sourceSpan.startLine}). ` +
+            acceptedInterface,
+          arg.sourceSpan.startLine,
+          arg.sourceSpan.startCol,
+          arg.sourceSpan.file,
+        );
+        continue;
+      }
+      claimed.set(canonicalUpper, arg.name);
+
+      if (arg.isOutput && resolved.direction === "input") {
+        this.addError(
+          `Output binding '=>' cannot target input parameter '${resolved.canonicalName}' of function block '${fb.name}' on ` +
+            `${invocationContext}${arg.sourceSpan.startLine}). ` +
+            acceptedInterface,
+          arg.sourceSpan.startLine,
+          arg.sourceSpan.startCol,
+          arg.sourceSpan.file,
+        );
+      } else if (!arg.isOutput && resolved.direction === "output") {
+        this.addError(
+          `Input assignment ':=' cannot target output parameter '${resolved.canonicalName}' of function block '${fb.name}' on ` +
+            `${invocationContext}${arg.sourceSpan.startLine}). ` +
+            acceptedInterface,
+          arg.sourceSpan.startLine,
+          arg.sourceSpan.startCol,
+          arg.sourceSpan.file,
+        );
+      }
     }
   }
 

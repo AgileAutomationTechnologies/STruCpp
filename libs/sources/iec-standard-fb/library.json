@@ -1,7 +1,7 @@
 {
   "name": "iec-standard-fb",
   "displayName": "Standard Function Blocks",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "namespace": "strucpp",
   "description": "IEC 61131-3 Standard Function Blocks (auto-generated from ST sources)",
   "isBuiltin": true,
@@ -13,10 +13,20 @@
       "documentation": "The output produces a single pulse when a falling edge is detected."
     },
     "SR": {
-      "documentation": "The SR bistable is a latch where the Set dominates."
+      "documentation": "The SR bistable is a latch where the Set dominates.",
+      "dominance": "set",
+      "variableAliases": {
+        "SET1": ["S1"],
+        "RESET": ["R"]
+      }
     },
     "RS": {
-      "documentation": "The RS bistable is a latch where the Reset dominates."
+      "documentation": "The RS bistable is a latch where the Reset dominates.",
+      "dominance": "reset",
+      "variableAliases": {
+        "SET": ["S"],
+        "RESET1": ["R1"]
+      }
     },
     "SEMA": {
       "documentation": "The semaphore provides a mechanism to allow software elements mutually exclusive access to certain resources."

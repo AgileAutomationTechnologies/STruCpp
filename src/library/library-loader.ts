@@ -23,6 +23,10 @@ import type {
 } from "../frontend/ast.js";
 import { createDefaultSourceSpan } from "../frontend/ast.js";
 import { ELEMENTARY_TYPES } from "../semantic/type-utils.js";
+import {
+  isValidLibraryFBVariableName,
+  validateLibraryFBVariableAliases,
+} from "./variable-aliases.js";
 
 /**
  * Error thrown when a library manifest fails validation.
@@ -32,6 +36,63 @@ export class LibraryManifestError extends Error {
     super(message);
     this.name = "LibraryManifestError";
   }
+}
+
+function loadFunctionBlockVariables(
+  value: unknown,
+  path: string,
+): LibraryVarType[] {
+  if (!Array.isArray(value)) {
+    throw new LibraryManifestError(
+      `Invalid library manifest: ${path} must be an array`,
+    );
+  }
+  return value.map((raw, index) => {
+    if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+      throw new LibraryManifestError(
+        `Invalid library manifest: ${path}[${index}] must be an object`,
+      );
+    }
+    const obj = raw as Record<string, unknown>;
+    if (typeof obj.name !== "string" || obj.name.length === 0) {
+      throw new LibraryManifestError(
+        `Invalid library manifest: ${path}[${index}].name must be a non-empty string`,
+      );
+    }
+    if (typeof obj.type !== "string" || obj.type.length === 0) {
+      throw new LibraryManifestError(
+        `Invalid library manifest: ${path}[${index}].type must be a non-empty string`,
+      );
+    }
+    const variable: LibraryVarType = { name: obj.name, type: obj.type };
+    if (obj.aliases !== undefined) {
+      if (
+        !Array.isArray(obj.aliases) ||
+        obj.aliases.some(
+          (alias) =>
+            typeof alias !== "string" || !isValidLibraryFBVariableName(alias),
+        )
+      ) {
+        throw new LibraryManifestError(
+          `Invalid library manifest: ${path}[${index}].aliases must be an array of valid Structured Text identifiers`,
+        );
+      }
+      variable.aliases = [...(obj.aliases as string[])];
+    }
+    if (Array.isArray(obj.arrayDimensions)) {
+      variable.arrayDimensions = obj.arrayDimensions as Array<{
+        start: number;
+        end: number;
+      }>;
+    }
+    if (typeof obj.elementTypeName === "string") {
+      variable.elementTypeName = obj.elementTypeName;
+    }
+    if (typeof obj.referenceKind === "string") {
+      variable.referenceKind = obj.referenceKind;
+    }
+    return variable;
+  });
 }
 
 /** Build a TypeReference AST node from a manifest variable entry. The
@@ -86,6 +147,7 @@ function makeVarSymbol(
     isExternal: false,
     isGlobal: false,
     isRetain: false,
+    ...(v.aliases ? { aliases: [...v.aliases] } : {}),
   };
 }
 
@@ -159,24 +221,40 @@ export function loadLibraryManifest(json: unknown): LibraryManifest {
           `Invalid library manifest: functionBlocks[${i}].name must be a non-empty string`,
         );
       }
-      if (!Array.isArray(fb.inputs)) {
+      const entry: LibraryManifest["functionBlocks"][0] = {
+        name: fb.name,
+        inputs: loadFunctionBlockVariables(
+          fb.inputs,
+          `functionBlocks[${i}].inputs`,
+        ),
+        outputs: loadFunctionBlockVariables(
+          fb.outputs,
+          `functionBlocks[${i}].outputs`,
+        ),
+        inouts: loadFunctionBlockVariables(
+          fb.inouts,
+          `functionBlocks[${i}].inouts`,
+        ),
+      };
+      if (typeof fb.documentation === "string") {
+        entry.documentation = fb.documentation;
+      }
+      if (fb.dominance !== undefined) {
+        if (fb.dominance !== "set" && fb.dominance !== "reset") {
+          throw new LibraryManifestError(
+            `Invalid library manifest: functionBlocks[${i}].dominance must be "set" or "reset"`,
+          );
+        }
+        entry.dominance = fb.dominance;
+      }
+      if (typeof fb.category === "string") entry.category = fb.category;
+      const aliasIssues = validateLibraryFBVariableAliases(entry);
+      if (aliasIssues.length > 0) {
         throw new LibraryManifestError(
-          `Invalid library manifest: functionBlocks[${i}].inputs must be an array`,
+          `Invalid library manifest: functionBlocks[${i}] '${entry.name}' has invalid variable aliases: ${aliasIssues.join("; ")}`,
         );
       }
-      if (!Array.isArray(fb.outputs)) {
-        throw new LibraryManifestError(
-          `Invalid library manifest: functionBlocks[${i}].outputs must be an array`,
-        );
-      }
-      if (!Array.isArray(fb.inouts)) {
-        throw new LibraryManifestError(
-          `Invalid library manifest: functionBlocks[${i}].inouts must be an array`,
-        );
-      }
-      functionBlocks.push(
-        fb as unknown as LibraryManifest["functionBlocks"][0],
-      );
+      functionBlocks.push(entry);
     }
   }
 

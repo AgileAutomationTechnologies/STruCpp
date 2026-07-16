@@ -18,12 +18,19 @@
  * Run: npm run build:stdlib
  */
 
-import { readFileSync, readdirSync, writeFileSync, mkdirSync, existsSync } from "fs";
+import {
+  readFileSync,
+  readdirSync,
+  writeFileSync,
+  mkdirSync,
+  existsSync,
+} from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath, pathToFileURL } from "url";
+import { buildIecFunctionBlockContracts } from "./build-iec-function-block-contracts.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
-const __dirname  = dirname(__filename);
+const __dirname = dirname(__filename);
 const projectRoot = resolve(__dirname, "..");
 
 function importFile(path) {
@@ -31,15 +38,15 @@ function importFile(path) {
 }
 
 const { compileStlib } = await importFile(
-  resolve(projectRoot, "dist/library/library-compiler.js")
+  resolve(projectRoot, "dist/library/library-compiler.js"),
 );
 const { loadLibraryConfig, applyLibraryConfigDocumentation } = await importFile(
-  resolve(projectRoot, "dist/library/library-config.js")
+  resolve(projectRoot, "dist/library/library-config.js"),
 );
 
 const sourcesDir = resolve(projectRoot, "libs", "sources", "iec-standard-fb");
-const libsDir    = resolve(projectRoot, "libs");
-const outPath    = resolve(libsDir, "iec-standard-fb.stlib");
+const libsDir = resolve(projectRoot, "libs");
+const outPath = resolve(libsDir, "iec-standard-fb.stlib");
 
 if (!existsSync(sourcesDir)) {
   console.error(`Error: sources directory not found: ${sourcesDir}`);
@@ -56,8 +63,16 @@ if (!config) {
 // standard FBs split across four files; counter.st instantiates
 // R_TRIG/F_TRIG from edge_detection.st, so edge_detection must be
 // compiled first. Bistable and timer have no inter-file deps.
-const ORDERED = ["edge_detection.st", "bistable.st", "counter.st", "timer.st"];
-const onDisk = new Set(readdirSync(sourcesDir).filter((f) => f.endsWith(".st")));
+const ORDERED = [
+  "edge_detection.st",
+  "bistable.st",
+  "sema.st",
+  "counter.st",
+  "timer.st",
+];
+const onDisk = new Set(
+  readdirSync(sourcesDir).filter((f) => f.endsWith(".st")),
+);
 const missing = ORDERED.filter((f) => !onDisk.has(f));
 if (missing.length > 0) {
   console.error(
@@ -93,28 +108,41 @@ if (config.description) {
 const docReport = applyLibraryConfigDocumentation(result.archive, config);
 if (
   docReport.unknownBlockDocs.length > 0 ||
-  docReport.unknownFunctionDocs.length > 0
+  docReport.unknownFunctionDocs.length > 0 ||
+  docReport.unknownBlockVariables.length > 0
 ) {
   // Stale doc entries are a build error: usually means an FB was
   // renamed/removed in ST without updating library.json, or a typo in
   // the JSON. Fail loudly so the mismatch can't sneak into a release.
   console.error("Error: library.json references unknown symbols:");
   for (const name of docReport.unknownBlockDocs) {
-    console.error(`  - blocks["${name}"] — no FB by that name in the compiled manifest`);
+    console.error(
+      `  - blocks["${name}"] — no FB by that name in the compiled manifest`,
+    );
   }
   for (const name of docReport.unknownFunctionDocs) {
-    console.error(`  - functions["${name}"] — no function by that name in the compiled manifest`);
+    console.error(
+      `  - functions["${name}"] — no function by that name in the compiled manifest`,
+    );
+  }
+  for (const name of docReport.unknownBlockVariables) {
+    console.error(
+      `  - variable alias target "${name}" — no variable by that name in the compiled manifest`,
+    );
   }
   process.exit(1);
 }
 
 mkdirSync(libsDir, { recursive: true });
 writeFileSync(outPath, JSON.stringify(result.archive, null, 2) + "\n", "utf-8");
+buildIecFunctionBlockContracts({ archivePath: outPath });
 
-const fbCount    = result.archive.manifest.functionBlocks.length;
-const docCount   = docReport.blocksDocumented;
-const undoc      = fbCount - docCount;
-const sizeKB     = Math.round(Buffer.byteLength(JSON.stringify(result.archive)) / 1024);
+const fbCount = result.archive.manifest.functionBlocks.length;
+const docCount = docReport.blocksDocumented;
+const undoc = fbCount - docCount;
+const sizeKB = Math.round(
+  Buffer.byteLength(JSON.stringify(result.archive)) / 1024,
+);
 const undocSuffix = undoc > 0 ? `, ${undoc} undocumented` : "";
 console.log(
   `Generated ${outPath} (${fbCount} function blocks, ` +

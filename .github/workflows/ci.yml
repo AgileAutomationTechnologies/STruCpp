@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, development, "integration/**", "feature/**"]
   pull_request:
-    branches: [main]
+    branches: [main, development, "integration/**", "feature/**"]
 
 jobs:
   lint:
@@ -150,10 +150,14 @@ jobs:
         run: npm ci
 
       - name: Bundle
+        env:
+          STRUCPP_DISTRIBUTION_VERSION: 0.5.13-tcgen.3
         run: npm run build:bundle
 
       - name: Build standalone binary
         run: npx pkg dist/strucpp-bundle.cjs --no-bytecode --public-packages "*" --public --target node22-linux-x64 --output dist/bin/strucpp --compress GZip
 
       - name: Smoke-test binary
+        env:
+          STRUCPP_EXPECTED_VERSION: 0.5.13-tcgen.3
         run: node scripts/smoke-test.mjs dist/bin/strucpp

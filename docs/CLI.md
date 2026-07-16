@@ -29,8 +29,8 @@ Distributors can keep the upstream `package.json` version unchanged while
 embedding a namespaced identity in a standalone bundle or executable:
 
 ```bash
-STRUCPP_DISTRIBUTION_VERSION=0.5.13-tcgen.1 npm run build:pkg:win
-STRUCPP_EXPECTED_VERSION=0.5.13-tcgen.1 \
+STRUCPP_DISTRIBUTION_VERSION=0.5.13-tcgen.3 npm run build:pkg:win
+STRUCPP_EXPECTED_VERSION=0.5.13-tcgen.3 \
   node scripts/smoke-test.mjs dist/bin/strucpp-win.exe
 ```
 
@@ -51,6 +51,7 @@ strucpp/
     test/                  # Test harness sources (for --test)
   libs/
     iec-standard-fb.stlib  # IEC 61131-3 standard function blocks
+    iec-function-block-contracts.json # versioned FB pins/aliases + SHA-256
     oscat-basic.stlib      # OSCAT Basic library
 ```
 

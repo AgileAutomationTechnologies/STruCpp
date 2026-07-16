@@ -100,6 +100,93 @@ describe("loadLibraryConfig", () => {
     expect(cfg?.functions?.FN.documentation).toBe("fn-doc");
   });
 
+  it("loads canonical block-variable aliases", () => {
+    writeJson("library.json", {
+      name: "x",
+      version: "1",
+      namespace: "ns",
+      blocks: {
+        RS: {
+          documentation: "reset dominant",
+          variableAliases: { SET: ["S"], RESET1: ["R1"] },
+        },
+      },
+    });
+    expect(loadLibraryConfig(tmp)?.blocks?.RS.variableAliases).toEqual({
+      SET: ["S"],
+      RESET1: ["R1"],
+    });
+  });
+
+  it("loads validated bistable dominance metadata", () => {
+    writeJson("library.json", {
+      name: "x",
+      version: "1",
+      namespace: "ns",
+      blocks: {
+        RS: {
+          documentation: "reset dominant",
+          dominance: "reset",
+        },
+        SR: {
+          documentation: "set dominant",
+          dominance: "set",
+        },
+      },
+    });
+    const blocks = loadLibraryConfig(tmp)?.blocks;
+    expect(blocks?.RS.dominance).toBe("reset");
+    expect(blocks?.SR.dominance).toBe("set");
+  });
+
+  it("rejects unknown bistable dominance values", () => {
+    writeJson("library.json", {
+      name: "x",
+      version: "1",
+      namespace: "ns",
+      blocks: {
+        RS: { documentation: "invalid", dominance: "last-input-wins" },
+      },
+    });
+    expect(() => loadLibraryConfig(tmp)).toThrow(
+      /dominance must be "set" or "reset"/,
+    );
+  });
+
+  it("rejects malformed or non-identifier block-variable aliases", () => {
+    for (const aliases of [["NOT VALID"], "S", [""]]) {
+      writeJson("library.json", {
+        name: "x",
+        version: "1",
+        namespace: "ns",
+        blocks: {
+          RS: {
+            documentation: "reset dominant",
+            variableAliases: { SET: aliases },
+          },
+        },
+      });
+      expect(() => loadLibraryConfig(tmp)).toThrow(
+        /Structured Text identifiers/,
+      );
+    }
+  });
+
+  it("rejects duplicate canonical alias keys case-insensitively", () => {
+    writeJson("library.json", {
+      name: "x",
+      version: "1",
+      namespace: "ns",
+      blocks: {
+        RS: {
+          documentation: "reset dominant",
+          variableAliases: { SET: ["S"], set: ["OLD_SET"] },
+        },
+      },
+    });
+    expect(() => loadLibraryConfig(tmp)).toThrow(/collide case-insensitively/);
+  });
+
   it("loads globalConstants when supplied (e.g. OSCAT's STRING_LENGTH)", () => {
     writeJson("library.json", {
       name: "x",
@@ -108,7 +195,10 @@ describe("loadLibraryConfig", () => {
       globalConstants: { STRING_LENGTH: 254, LIST_LENGTH: 254 },
     });
     const cfg = loadLibraryConfig(tmp);
-    expect(cfg?.globalConstants).toEqual({ STRING_LENGTH: 254, LIST_LENGTH: 254 });
+    expect(cfg?.globalConstants).toEqual({
+      STRING_LENGTH: 254,
+      LIST_LENGTH: 254,
+    });
   });
 
   it("throws when globalConstants is an array instead of an object map", () => {
@@ -218,6 +308,22 @@ describe("applyLibraryConfigDocumentation", () => {
     expect(archive.manifest.functionBlocks[1]?.documentation).toBe("off-delay");
   });
 
+  it("merges bistable dominance into the compiled manifest", () => {
+    const archive = makeArchive({ fbs: ["RS", "SR"] });
+    applyLibraryConfigDocumentation(archive, {
+      name: "x",
+      version: "1",
+      namespace: "ns",
+      blocks: {
+        RS: { documentation: "reset dominant", dominance: "reset" },
+        SR: { documentation: "set dominant", dominance: "set" },
+      },
+    });
+
+    expect(archive.manifest.functionBlocks[0]?.dominance).toBe("reset");
+    expect(archive.manifest.functionBlocks[1]?.dominance).toBe("set");
+  });
+
   it("merges function docs into matching functions in place", () => {
     const archive = makeArchive({ fns: [{ name: "ABS", returnType: "REAL" }] });
     const config: LibraryConfig = {
@@ -229,6 +335,52 @@ describe("applyLibraryConfigDocumentation", () => {
     const report = applyLibraryConfigDocumentation(archive, config);
     expect(report.functionsDocumented).toBe(1);
     expect(archive.manifest.functions[0]?.documentation).toBe("absolute value");
+  });
+
+  it("applies aliases to the canonical variable and reports unknown pins", () => {
+    const archive = makeArchive({ fbs: ["RS"] });
+    archive.manifest.functionBlocks[0]!.inputs = [
+      { name: "SET", type: "BOOL" },
+      { name: "RESET1", type: "BOOL" },
+    ];
+    const report = applyLibraryConfigDocumentation(archive, {
+      name: "x",
+      version: "1",
+      namespace: "ns",
+      blocks: {
+        RS: {
+          documentation: "reset dominant",
+          variableAliases: { set: ["S"], TYPO: ["OLD"] },
+        },
+      },
+    });
+
+    expect(archive.manifest.functionBlocks[0]!.inputs[0]!.aliases).toEqual([
+      "S",
+    ]);
+    expect(report.variableAliasesApplied).toBe(1);
+    expect(report.unknownBlockVariables).toEqual(["RS.TYPO"]);
+  });
+
+  it("rejects canonical and alias namespace collisions in config", () => {
+    const archive = makeArchive({ fbs: ["FB"] });
+    archive.manifest.functionBlocks[0]!.inputs = [
+      { name: "FIRST", type: "BOOL" },
+      { name: "SECOND", type: "BOOL" },
+    ];
+    expect(() =>
+      applyLibraryConfigDocumentation(archive, {
+        name: "x",
+        version: "1",
+        namespace: "ns",
+        blocks: {
+          FB: {
+            documentation: "bad aliases",
+            variableAliases: { FIRST: ["SECOND"] },
+          },
+        },
+      }),
+    ).toThrow(/collides with canonical variable/);
   });
 
   it("reports unknown block names instead of silently dropping them", () => {

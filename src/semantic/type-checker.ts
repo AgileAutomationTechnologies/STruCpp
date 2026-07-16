@@ -27,6 +27,7 @@ import type {
   VarBlock,
 } from "../frontend/ast.js";
 import type { SymbolTables, Scope } from "./symbol-table.js";
+import { resolveFunctionBlockVariable } from "./symbol-table.js";
 import type { StdFunctionRegistry } from "./std-function-registry.js";
 import type { CompileError } from "../types.js";
 import {
@@ -251,15 +252,8 @@ export class TypeChecker {
     }
     const fb = this.symbolTables.lookupFunctionBlock(typeName);
     if (fb) {
-      const fu = fieldName.toUpperCase();
-      for (const m of [
-        ...fb.inputs,
-        ...fb.outputs,
-        ...fb.inouts,
-        ...fb.locals,
-      ]) {
-        if (m.name.toUpperCase() === fu) return m.declaration?.type?.name;
-      }
+      const member = resolveFunctionBlockVariable(fb, fieldName)?.variable;
+      if (member) return member.declaration?.type?.name;
     }
     // Dependency struct types: their member types are carried on the registered
     // StructType (e.g. CONSTANTS_MATH.PI), so `MATH.PI` resolves to REAL.

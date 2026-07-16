@@ -43,3 +43,23 @@ TEST 'RS reset-dominant with four input combos'
   ASSERT_FALSE(q_reset);
   ASSERT_FALSE(q_neither);
 END_TEST
+
+TEST 'TwinCAT SR canonical SET1 RESET interface'
+  VAR sr : SR; q_set, q_reset : BOOL; END_VAR
+  sr(SET1 := TRUE, RESET := TRUE);
+  q_set := sr.Q1;
+  sr(SET1 := FALSE, RESET := TRUE);
+  q_reset := sr.Q1;
+  ASSERT_TRUE(q_set);
+  ASSERT_FALSE(q_reset);
+END_TEST
+
+TEST 'TwinCAT RS canonical SET RESET1 interface'
+  VAR rs : RS; q_set, q_reset : BOOL; END_VAR
+  rs(SET := TRUE, RESET1 := FALSE);
+  q_set := rs.Q1;
+  rs(SET := TRUE, RESET1 := TRUE);
+  q_reset := rs.Q1;
+  ASSERT_TRUE(q_set);
+  ASSERT_FALSE(q_reset);
+END_TEST

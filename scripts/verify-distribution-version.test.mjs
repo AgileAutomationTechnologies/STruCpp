@@ -17,12 +17,22 @@ test("accepts a namespaced revision on the exact upstream base", () => {
     },
   );
   assert.equal(
-    validateTcGenReleaseTag(
-      "0.5.13",
-      "0.5.13-tcgen.12",
-      "v0.5.13-tcgen.12",
-    ),
+    validateTcGenReleaseTag("0.5.13", "0.5.13-tcgen.12", "v0.5.13-tcgen.12"),
     "v0.5.13-tcgen.12",
+  );
+});
+
+test("accepts the TcGen alias-contract distribution identity", () => {
+  assert.deepEqual(
+    validateTcGenDistributionVersion("0.5.13", "0.5.13-tcgen.3"),
+    {
+      distributionVersion: "0.5.13-tcgen.3",
+      downstreamRevision: 3,
+    },
+  );
+  assert.equal(
+    validateTcGenReleaseTag("0.5.13", "0.5.13-tcgen.3", "v0.5.13-tcgen.3"),
+    "v0.5.13-tcgen.3",
   );
 });
 
@@ -43,12 +53,7 @@ test("rejects wrong bases and invalid downstream revisions", () => {
 
 test("reserves the plain upstream release tag", () => {
   assert.throws(
-    () =>
-      validateTcGenReleaseTag(
-        "0.5.13",
-        "0.5.13-tcgen.1",
-        "v0.5.13",
-      ),
+    () => validateTcGenReleaseTag("0.5.13", "0.5.13-tcgen.1", "v0.5.13"),
     /reserved for upstream/,
   );
 });
@@ -56,11 +61,7 @@ test("reserves the plain upstream release tag", () => {
 test("rejects a mismatched downstream release tag", () => {
   assert.throws(
     () =>
-      validateTcGenReleaseTag(
-        "0.5.13",
-        "0.5.13-tcgen.2",
-        "v0.5.13-tcgen.1",
-      ),
+      validateTcGenReleaseTag("0.5.13", "0.5.13-tcgen.2", "v0.5.13-tcgen.1"),
     /expected 'v0.5.13-tcgen.2'/,
   );
 });

@@ -72,6 +72,12 @@ export interface LibraryVarType {
   name: string;
   /** Type kind for the variable itself */
   type: string;
+  /**
+   * Alternative source-level names for this variable. Aliases never create
+   * additional storage and never participate in positional argument order;
+   * consumers resolve them back to `name` before semantic checks or codegen.
+   */
+  aliases?: string[];
   /** Array dimensions for inline array types (e.g., ARRAY[0..255] OF BYTE) */
   arrayDimensions?: Array<{ start: number; end: number }>;
   /** Element type name for inline array types */
@@ -97,6 +103,11 @@ export interface LibraryFBEntry {
    *  time (see scripts/generate-*.mjs). Optional so existing archives
    *  without docs still load. */
   documentation?: string;
+  /**
+   * Bistable dominance exposed as machine-readable contract metadata.
+   * Optional so ordinary FBs and existing library archives remain unchanged.
+   */
+  dominance?: "set" | "reset";
   /** Folder path within the library — see `LibraryFunctionEntry.category`. */
   category?: string;
 }

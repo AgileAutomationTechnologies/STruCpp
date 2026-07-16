@@ -55,17 +55,30 @@ await esbuild.build({
 
 // Copy runtime files for .vsix packaging.
 const copies = [
-  { src: path.resolve(__dirname, "..", "src", "runtime", "include"), dest: path.resolve(__dirname, "runtime", "include") },
-  { src: path.resolve(__dirname, "..", "src", "runtime", "repl"),    dest: path.resolve(__dirname, "runtime", "repl") },
-  { src: path.resolve(__dirname, "..", "src", "runtime", "test"),    dest: path.resolve(__dirname, "runtime", "test") },
+  {
+    src: path.resolve(__dirname, "..", "src", "runtime", "include"),
+    dest: path.resolve(__dirname, "runtime", "include"),
+  },
+  {
+    src: path.resolve(__dirname, "..", "src", "runtime", "repl"),
+    dest: path.resolve(__dirname, "runtime", "repl"),
+  },
+  {
+    src: path.resolve(__dirname, "..", "src", "runtime", "test"),
+    dest: path.resolve(__dirname, "runtime", "test"),
+  },
 ];
 
 for (const { src, dest } of copies) {
   try {
     fs.cpSync(src, dest, { recursive: true });
-    console.log(`Copied ${path.relative(__dirname, src)} → ${path.relative(__dirname, dest)}`);
+    console.log(
+      `Copied ${path.relative(__dirname, src)} → ${path.relative(__dirname, dest)}`,
+    );
   } catch {
-    console.warn(`Skipped copying ${path.relative(__dirname, src)} (not found)`);
+    console.warn(
+      `Skipped copying ${path.relative(__dirname, src)} (not found)`,
+    );
   }
 }
 
@@ -89,7 +102,9 @@ try {
     stlibCount++;
   }
 } catch (err) {
-  console.warn(`Skipped copying .stlib files: ${err instanceof Error ? err.message : String(err)}`);
+  console.warn(
+    `Skipped copying .stlib files: ${err instanceof Error ? err.message : String(err)}`,
+  );
 }
 if (stlibCount === 0) {
   console.warn(
@@ -99,6 +114,19 @@ if (stlibCount === 0) {
   );
 } else {
   console.log(`Copied ${stlibCount} .stlib archive(s) → bundled-libs/`);
+}
+
+for (const metadataName of [
+  "iec-types.json",
+  "iec-function-block-contracts.json",
+]) {
+  const source = path.join(libsDir, metadataName);
+  if (!fs.existsSync(source)) {
+    console.warn(`Skipped copying ${metadataName} (not found)`);
+    continue;
+  }
+  fs.copyFileSync(source, path.join(bundledLibsDir, metadataName));
+  console.log(`Copied ${metadataName} to bundled-libs/`);
 }
 
 console.log("Bundled client and server.");

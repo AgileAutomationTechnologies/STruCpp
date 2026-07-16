@@ -101,7 +101,7 @@ LL(3) Chevrotain parser with error recovery. Grammar covers the full IEC 61131-3
 - **POUs**: PROGRAM, FUNCTION, FUNCTION_BLOCK, INTERFACE
 - **Variables**: VAR, VAR_INPUT, VAR_OUTPUT, VAR_IN_OUT, VAR_EXTERNAL, VAR_GLOBAL (with CONSTANT, RETAIN, AT modifiers)
 - **Types**: STRUCT, ENUM, ARRAY (1D/2D/3D), SUBRANGE, TYPE aliases, REF_TO, REFERENCE_TO, POINTER TO
-- **Statements**: assignment, IF/ELSIF/ELSE, FOR/WHILE/REPEAT, CASE, EXIT, RETURN, function/method calls, __NEW, __DELETE
+- **Statements**: assignment, IF/ELSIF/ELSE, FOR/WHILE/REPEAT, CASE, EXIT, RETURN, function/method calls, **NEW, **DELETE
 - **Expressions**: full operator precedence (arithmetic, comparison, logical, bitwise, shift, power, unary), function calls, method calls, array/field access, REF/DREF, typed literals
 - **OOP**: methods, properties (GET/SET), inheritance (EXTENDS), interfaces (IMPLEMENTS), visibility (PUBLIC/PRIVATE/PROTECTED), ABSTRACT/FINAL/OVERRIDE
 
@@ -187,7 +187,37 @@ Libraries use a single-file `.stlib` archive format (JSON):
 ### Bundled Libraries
 
 - **iec-standard-fb.stlib**: IEC 61131-3 standard function blocks (TON, TOF, TP, CTU, CTD, CTUD, R_TRIG, F_TRIG, SR, RS) compiled from ST source
+- **iec-function-block-contracts.json**: deterministic, versioned public FB
+  interfaces with a SHA-256 identity. Canonical variables remain the only
+  storage and positional parameters. An optional `aliases` array on a
+  manifest variable accepts additional named-call/member spellings and always
+  resolves them back to that canonical variable.
 - **oscat-basic.stlib**: OSCAT Basic library (373 functions, 164 FBs)
+
+Library authors configure compatibility spellings without changing compiler
+code or the ST declaration:
+
+```json
+{
+  "blocks": {
+    "RS": {
+      "documentation": "Reset-dominant latch",
+      "dominance": "reset",
+      "variableAliases": { "SET": ["S"], "RESET1": ["R1"] }
+    }
+  }
+}
+```
+
+For bistable blocks, the optional validated `dominance` value (`set` or
+`reset`) is copied into the compiled manifest and the deterministic
+`iec-function-block-contracts.json` sidecar. It is contract metadata for
+tooling and semantic runtimes; execution continues to come from the block's ST
+source.
+
+Alias and canonical namespaces are validated case-insensitively when the
+archive is built and loaded. Tool signatures and positional calls continue to
+show only the canonical variables.
 
 ### Library Compilation
 

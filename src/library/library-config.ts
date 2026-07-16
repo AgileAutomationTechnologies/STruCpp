@@ -30,6 +30,23 @@
  */
 
 import type { StlibArchive } from "./library-manifest.js";
+import {
+  isValidLibraryFBVariableName,
+  listLibraryFBVariables,
+  validateLibraryFBVariableAliases,
+} from "./variable-aliases.js";
+
+export interface LibraryBlockConfig {
+  documentation: string;
+  /** Canonical public variable name -> accepted source-level aliases. */
+  variableAliases?: Record<string, string[]>;
+  /**
+   * Optional bistable behavior published to semantic-runtime consumers.
+   * This is descriptive contract metadata only; the block's ST source remains
+   * the executable definition of its behavior.
+   */
+  dominance?: "set" | "reset";
+}
 
 /**
  * Parsed shape of a `library.json` file.
@@ -68,7 +85,7 @@ export interface LibraryConfig {
    *  not contain .st files — the importer produces them at build time. */
   codesysSource?: string;
   /** Block-level documentation, keyed by FB name. */
-  blocks?: Record<string, { documentation: string }>;
+  blocks?: Record<string, LibraryBlockConfig>;
   /** Function-level documentation, keyed by function name. */
   functions?: Record<string, { documentation: string }>;
 }
@@ -122,12 +139,87 @@ function validateLibraryConfig(raw: unknown, path: string): LibraryConfig {
     config.globalConstants = validateGlobalConstants(obj.globalConstants, path);
   }
   if (obj.blocks !== undefined) {
-    config.blocks = validateDocMap(obj.blocks, "blocks", path);
+    config.blocks = validateBlockMap(obj.blocks, path);
   }
   if (obj.functions !== undefined) {
     config.functions = validateDocMap(obj.functions, "functions", path);
   }
   return config;
+}
+
+function validateBlockMap(
+  value: unknown,
+  path: string,
+): Record<string, LibraryBlockConfig> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error(`${path}: "blocks" must be an object map`);
+  }
+  const out: Record<string, LibraryBlockConfig> = {};
+  for (const [name, entry] of Object.entries(
+    value as Record<string, unknown>,
+  )) {
+    if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
+      throw new Error(
+        `${path}: blocks["${name}"] must be an object with a "documentation" field`,
+      );
+    }
+    const entryObj = entry as Record<string, unknown>;
+    if (typeof entryObj.documentation !== "string") {
+      throw new Error(
+        `${path}: blocks["${name}"].documentation must be a string`,
+      );
+    }
+    const block: LibraryBlockConfig = {
+      documentation: entryObj.documentation,
+    };
+    if (entryObj.dominance !== undefined) {
+      if (entryObj.dominance !== "set" && entryObj.dominance !== "reset") {
+        throw new Error(
+          `${path}: blocks["${name}"].dominance must be "set" or "reset"`,
+        );
+      }
+      block.dominance = entryObj.dominance;
+    }
+    if (entryObj.variableAliases !== undefined) {
+      if (
+        typeof entryObj.variableAliases !== "object" ||
+        entryObj.variableAliases === null ||
+        Array.isArray(entryObj.variableAliases)
+      ) {
+        throw new Error(
+          `${path}: blocks["${name}"].variableAliases must be an object map`,
+        );
+      }
+      const aliases: Record<string, string[]> = {};
+      const canonicalKeys = new Map<string, string>();
+      for (const [canonical, rawAliases] of Object.entries(
+        entryObj.variableAliases as Record<string, unknown>,
+      )) {
+        const previousCanonical = canonicalKeys.get(canonical.toUpperCase());
+        if (previousCanonical !== undefined) {
+          throw new Error(
+            `${path}: blocks["${name}"].variableAliases keys "${previousCanonical}" and "${canonical}" collide case-insensitively`,
+          );
+        }
+        canonicalKeys.set(canonical.toUpperCase(), canonical);
+        if (
+          !Array.isArray(rawAliases) ||
+          rawAliases.some(
+            (alias) =>
+              typeof alias !== "string" || !isValidLibraryFBVariableName(alias),
+          )
+        ) {
+          throw new Error(
+            `${path}: blocks["${name}"].variableAliases["${canonical}"] must be an array of valid Structured Text identifiers`,
+          );
+        }
+        aliases[canonical] = [...(rawAliases as string[])];
+      }
+      block.variableAliases = aliases;
+    }
+    out[name] = block;
+  }
+  return out;
 }
 
 function validateGlobalConstants(
@@ -192,6 +284,10 @@ export interface ApplyDocumentationResult {
   unknownBlockDocs: string[];
   /** Function names doc'd in library.json but absent from the manifest. */
   unknownFunctionDocs: string[];
+  /** Number of alternate variable spellings attached to canonical pins. */
+  variableAliasesApplied: number;
+  /** Configured `BLOCK.VARIABLE` identities absent from the manifest. */
+  unknownBlockVariables: string[];
 }
 
 /**
@@ -213,6 +309,8 @@ export function applyLibraryConfigDocumentation(
     functionsDocumented: 0,
     unknownBlockDocs: [],
     unknownFunctionDocs: [],
+    variableAliasesApplied: 0,
+    unknownBlockVariables: [],
   };
 
   if (config.blocks) {
@@ -226,7 +324,33 @@ export function applyLibraryConfigDocumentation(
         continue;
       }
       fb.documentation = entry.documentation;
+      if (entry.dominance !== undefined) {
+        fb.dominance = entry.dominance;
+      }
       result.blocksDocumented++;
+      if (entry.variableAliases) {
+        const variables = listLibraryFBVariables(fb);
+        for (const [canonicalName, aliases] of Object.entries(
+          entry.variableAliases,
+        )) {
+          const variable = variables.find(
+            ({ variable: candidate }) =>
+              candidate.name.toUpperCase() === canonicalName.toUpperCase(),
+          )?.variable;
+          if (!variable) {
+            result.unknownBlockVariables.push(`${name}.${canonicalName}`);
+            continue;
+          }
+          variable.aliases = [...aliases];
+          result.variableAliasesApplied += aliases.length;
+        }
+        const issues = validateLibraryFBVariableAliases(fb);
+        if (issues.length > 0) {
+          throw new Error(
+            `library.json block '${name}' has invalid variable aliases: ${issues.join("; ")}`,
+          );
+        }
+      }
     }
   }
 

@@ -20,10 +20,12 @@ libs/*.stlib
 # `src/semantic/iec-types-data.ts` by `scripts/build-iec-types-json.mjs`,
 # so tracking it would just produce churn whenever the metadata changes.
 libs/iec-types.json
+libs/iec-function-block-contracts.json
 # Extension-side copy is also a build artifact (vscode-extension's
 # esbuild.mjs syncs it from libs/ at vsix build time).
 vscode-extension/bundled-libs/*.stlib
 vscode-extension/bundled-libs/iec-types.json
+vscode-extension/bundled-libs/iec-function-block-contracts.json
 
 # IDE and editors
 .vscode/

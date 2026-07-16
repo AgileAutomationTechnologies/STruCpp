@@ -22,6 +22,7 @@
     "build": "node scripts/rebuild-libs.mjs",
     "build:tsc-only": "tsc",
     "build:stdlib": "node scripts/generate-stdlib.mjs",
+    "build:contracts": "node scripts/build-iec-function-block-contracts.mjs",
     "build:additional-fb": "node scripts/generate-additional-fb.mjs",
     "build:libs": "node scripts/rebuild-libs.mjs",
     "build:browser-server": "node scripts/build-browser-server.mjs",
@@ -43,7 +44,7 @@
     "format:check": "prettier --check src/",
     "typecheck": "tsc --noEmit",
     "check:purity": "node scripts/check-purity.mjs",
-    "clean": "rm -rf dist/ libs/*.stlib libs/iec-types.json vscode-extension/bundled-libs/*.stlib vscode-extension/bundled-libs/iec-types.json",
+    "clean": "rm -rf dist/ libs/*.stlib libs/iec-types.json libs/iec-function-block-contracts.json vscode-extension/bundled-libs/*.stlib vscode-extension/bundled-libs/iec-types.json vscode-extension/bundled-libs/iec-function-block-contracts.json",
     "prepack": "npm run build && npm run build:browser-server",
     "prepublishOnly": "npm run build && npm run build:browser-server",
     "prepare": "husky"

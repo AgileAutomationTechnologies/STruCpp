@@ -404,6 +404,10 @@ private:
                 printf("  [FAIL] %s (unknown exception)\n", tc.name);
                 failed_++;
             }
+            // The CLI may be hosted behind an MCP stdio relay. Flush each
+            // completed test so request-bound assertion progress is observable
+            // while the remaining checkpoints are still executing.
+            fflush(stdout);
         }
 
         printf("\n-----------------------------------------\n");

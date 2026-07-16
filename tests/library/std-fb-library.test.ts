@@ -9,8 +9,12 @@
 import { describe, it, expect } from "vitest";
 import { resolve } from "path";
 import { compileLibrary } from "../../src/library/library-compiler.js";
+import type { LibraryVarType } from "../../src/library/library-manifest.js";
 import { registerLibrarySymbols } from "../../src/library/library-loader.js";
-import { discoverStlibs, loadStlibFromFile } from "../../src/node/library-loader.js";
+import {
+  discoverStlibs,
+  loadStlibFromFile,
+} from "../../src/node/library-loader.js";
 
 import { SymbolTables } from "../../src/semantic/symbol-table.js";
 import { compile } from "../../src/index.js";
@@ -230,8 +234,7 @@ describe("Standard FB Library", () => {
       const fb = findFB("SR");
       expect(fb).toBeDefined();
       const inputNames = fb!.inputs.map((i) => i.name);
-      expect(inputNames).toContain("S1");
-      expect(inputNames).toContain("R");
+      expect(inputNames).toEqual(["SET1", "RESET"]);
       expect(fb!.outputs).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ name: "Q1", type: "BOOL" }),
@@ -243,8 +246,7 @@ describe("Standard FB Library", () => {
       const fb = findFB("RS");
       expect(fb).toBeDefined();
       const inputNames = fb!.inputs.map((i) => i.name);
-      expect(inputNames).toContain("S");
-      expect(inputNames).toContain("R1");
+      expect(inputNames).toEqual(["SET", "RESET1"]);
       expect(fb!.outputs).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ name: "Q1", type: "BOOL" }),
@@ -373,7 +375,7 @@ describe("Standard FB Library", () => {
     it("should return a valid StlibArchive", () => {
       expect(stlibArchive.formatVersion).toBe(1);
       expect(stlibArchive.manifest.name).toBe("iec-standard-fb");
-      expect(stlibArchive.manifest.version).toBe("1.0.0");
+      expect(stlibArchive.manifest.version).toBe("1.1.0");
       expect(stlibArchive.manifest.namespace).toBe("strucpp");
     });
 
@@ -396,7 +398,10 @@ describe("Standard FB Library", () => {
       // build script fails — this test guards against that loop being
       // weakened in the future.
       for (const fb of stlibArchive.manifest.functionBlocks) {
-        expect(fb.documentation, `${fb.name} should have documentation`).toMatch(/\S/);
+        expect(
+          fb.documentation,
+          `${fb.name} should have documentation`,
+        ).toMatch(/\S/);
       }
     });
 
@@ -446,24 +451,30 @@ describe("Standard FB Library", () => {
     });
 
     it("should have correct bistable FB entries", () => {
-      const sr = stlibArchive.manifest.functionBlocks.find((fb) => fb.name === "SR");
-      const rs = stlibArchive.manifest.functionBlocks.find((fb) => fb.name === "RS");
+      const sr = stlibArchive.manifest.functionBlocks.find(
+        (fb) => fb.name === "SR",
+      );
+      const rs = stlibArchive.manifest.functionBlocks.find(
+        (fb) => fb.name === "RS",
+      );
       expect(sr).toBeDefined();
       expect(sr!.inputs).toEqual([
-        { name: "S1", type: "BOOL" },
-        { name: "R", type: "BOOL" },
+        { name: "SET1", type: "BOOL", aliases: ["S1"] },
+        { name: "RESET", type: "BOOL", aliases: ["R"] },
       ]);
       expect(sr!.outputs).toEqual([{ name: "Q1", type: "BOOL" }]);
       expect(rs).toBeDefined();
       expect(rs!.inputs).toEqual([
-        { name: "S", type: "BOOL" },
-        { name: "R1", type: "BOOL" },
+        { name: "SET", type: "BOOL", aliases: ["S"] },
+        { name: "RESET1", type: "BOOL", aliases: ["R1"] },
       ]);
       expect(rs!.outputs).toEqual([{ name: "Q1", type: "BOOL" }]);
     });
 
     it("should have correct counter FB entries", () => {
-      const ctu = stlibArchive.manifest.functionBlocks.find((fb) => fb.name === "CTU");
+      const ctu = stlibArchive.manifest.functionBlocks.find(
+        (fb) => fb.name === "CTU",
+      );
       expect(ctu).toBeDefined();
       expect(ctu!.inputs).toEqual([
         { name: "CU", type: "BOOL" },
@@ -475,7 +486,9 @@ describe("Standard FB Library", () => {
         { name: "CV", type: "INT" },
       ]);
 
-      const ctud = stlibArchive.manifest.functionBlocks.find((fb) => fb.name === "CTUD");
+      const ctud = stlibArchive.manifest.functionBlocks.find(
+        (fb) => fb.name === "CTUD",
+      );
       expect(ctud).toBeDefined();
       expect(ctud!.inputs).toHaveLength(5);
       expect(ctud!.outputs).toHaveLength(3);
@@ -508,7 +521,9 @@ describe("Standard FB Library", () => {
 
     it("should have correct timer FB entries", () => {
       for (const name of ["TON", "TOF", "TP"]) {
-        const timer = stlibArchive.manifest.functionBlocks.find((fb) => fb.name === name);
+        const timer = stlibArchive.manifest.functionBlocks.find(
+          (fb) => fb.name === name,
+        );
         expect(timer).toBeDefined();
         expect(timer!.inputs).toEqual([
           { name: "IN", type: "BOOL" },
@@ -548,12 +563,8 @@ describe("Standard FB Library", () => {
       registerLibrarySymbols(stlibArchive.manifest, symbolTables);
 
       for (const suffix of ["DINT", "LINT", "UDINT", "ULINT"]) {
-        expect(
-          symbolTables.lookupFunctionBlock(`CTU_${suffix}`),
-        ).toBeDefined();
-        expect(
-          symbolTables.lookupFunctionBlock(`CTD_${suffix}`),
-        ).toBeDefined();
+        expect(symbolTables.lookupFunctionBlock(`CTU_${suffix}`)).toBeDefined();
+        expect(symbolTables.lookupFunctionBlock(`CTD_${suffix}`)).toBeDefined();
         expect(
           symbolTables.lookupFunctionBlock(`CTUD_${suffix}`),
         ).toBeDefined();
@@ -669,6 +680,35 @@ describe("Standard FB Library", () => {
 
       expect(result.success).toBe(true);
       expect(result.errors).toHaveLength(0);
+    });
+
+    it("accepts exact TwinCAT latch pins and emits canonical storage", () => {
+      const source = `
+        PROGRAM Main
+          VAR
+            resetDominant : RS;
+            setDominant : SR;
+            setSignal : BOOL;
+            resetSignal : BOOL;
+            q : BOOL;
+          END_VAR
+          resetDominant(SET := setSignal, RESET1 := resetSignal);
+          setDominant(SET1 := setSignal, RESET := resetSignal);
+          resetDominant.S := setSignal;
+          setDominant.R := resetSignal;
+          q := resetDominant.Q1 OR setDominant.Q1;
+        END_PROGRAM
+      `;
+      const result = compile(source, { libraries: discoverStlibs(LIBS_DIR) });
+
+      expect(result.success).toBe(true);
+      expect(result.errors).toHaveLength(0);
+      expect(result.cppCode).toContain("RESETDOMINANT.SET = SETSIGNAL;");
+      expect(result.cppCode).toContain("RESETDOMINANT.RESET1 = RESETSIGNAL;");
+      expect(result.cppCode).toContain("SETDOMINANT.SET1 = SETSIGNAL;");
+      expect(result.cppCode).toContain("SETDOMINANT.RESET = RESETSIGNAL;");
+      expect(result.cppCode).not.toMatch(/RESETDOMINANT\.(S|R1)\b/);
+      expect(result.cppCode).not.toMatch(/SETDOMINANT\.(S1|R)\b/);
     });
 
     it("should compile a program using a counter type variant (CTU_DINT)", () => {
@@ -792,9 +832,11 @@ describe("Standard FB Library", () => {
           loadedFB,
           `FB '${compiledFB.name}' missing from archive manifest`,
         ).toBeDefined();
-        expect(loadedFB!.inputs).toEqual(compiledFB.inputs);
-        expect(loadedFB!.outputs).toEqual(compiledFB.outputs);
-        expect(loadedFB!.inouts).toEqual(compiledFB.inouts);
+        const canonicalShape = (variables: LibraryVarType[]) =>
+          variables.map(({ aliases: _aliases, ...variable }) => variable);
+        expect(canonicalShape(loadedFB!.inputs)).toEqual(compiledFB.inputs);
+        expect(canonicalShape(loadedFB!.outputs)).toEqual(compiledFB.outputs);
+        expect(canonicalShape(loadedFB!.inouts)).toEqual(compiledFB.inouts);
       }
     });
   });

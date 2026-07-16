@@ -361,6 +361,9 @@ export class CodeGenerator {
   /** Library FB field type map: "FBNAME.FIELDNAME" → type name (for field mangling in test codegen) */
   private libraryFBFieldTypes: Map<string, string> = new Map();
 
+  /** Library FB canonical/alias map: "FBNAME.SOURCE_NAME" -> emitted field name. */
+  private libraryFBFieldCanonicalNames: Map<string, string> = new Map();
+
   /** Extended type metadata for library FB fields (array dims, reference kind) */
   private libraryFBFieldTypeRefs: Map<
     string,
@@ -686,6 +689,7 @@ export class CodeGenerator {
       fields: Array<{
         name: string;
         type: string;
+        aliases?: string[];
         arrayDimensions?: Array<{ start: number; end: number }>;
         elementTypeName?: string;
         referenceKind?: string;
@@ -702,10 +706,12 @@ export class CodeGenerator {
         );
       }
       for (const f of fb.fields) {
-        this.libraryFBFieldTypes.set(
-          `${fbUpper}.${f.name.toUpperCase()}`,
-          f.type,
-        );
+        const sourceNames = [f.name, ...(f.aliases ?? [])];
+        for (const sourceName of sourceNames) {
+          const key = `${fbUpper}.${sourceName.toUpperCase()}`;
+          this.libraryFBFieldTypes.set(key, f.type);
+          this.libraryFBFieldCanonicalNames.set(key, f.name);
+        }
         // Store array metadata for inline array type reconstruction
         if (f.arrayDimensions || f.elementTypeName || f.referenceKind) {
           const ref: {
@@ -716,10 +722,12 @@ export class CodeGenerator {
           if (f.arrayDimensions) ref.arrayDimensions = f.arrayDimensions;
           if (f.elementTypeName) ref.elementTypeName = f.elementTypeName;
           if (f.referenceKind) ref.referenceKind = f.referenceKind;
-          this.libraryFBFieldTypeRefs.set(
-            `${fbUpper}.${f.name.toUpperCase()}`,
-            ref,
-          );
+          for (const sourceName of sourceNames) {
+            this.libraryFBFieldTypeRefs.set(
+              `${fbUpper}.${sourceName.toUpperCase()}`,
+              ref,
+            );
+          }
         }
       }
     }
@@ -756,6 +764,7 @@ export class CodeGenerator {
           const mapVar = (v: {
             name: string;
             type: string;
+            aliases?: string[];
             arrayDimensions?: Array<{ start: number; end: number }>;
             elementTypeName?: string;
             referenceKind?: string;
@@ -763,6 +772,7 @@ export class CodeGenerator {
             const entry: {
               name: string;
               type: string;
+              aliases?: string[];
               arrayDimensions?: Array<{ start: number; end: number }>;
               elementTypeName?: string;
               referenceKind?: string;
@@ -770,6 +780,7 @@ export class CodeGenerator {
               name: v.name,
               type: v.type,
             };
+            if (v.aliases !== undefined) entry.aliases = [...v.aliases];
             if (v.arrayDimensions) entry.arrayDimensions = v.arrayDimensions;
             if (v.elementTypeName) entry.elementTypeName = v.elementTypeName;
             if (v.referenceKind) entry.referenceKind = v.referenceKind;
@@ -3625,7 +3636,10 @@ export class CodeGenerator {
       if (expr.fieldAccess.length > 0) {
         let currentType = this.currentFBName;
         for (let i = 0; i < expr.fieldAccess.length; i++) {
-          const field = expr.fieldAccess[i]!;
+          const field = this.resolveCanonicalMemberName(
+            currentType,
+            expr.fieldAccess[i]!,
+          );
           const isLast = i === expr.fieldAccess.length - 1;
           if (isLast) {
             const propName = this.resolvePropertyName(currentType, field);
@@ -3659,7 +3673,10 @@ export class CodeGenerator {
       if (expr.fieldAccess.length > 0) {
         let currentType: string | undefined = this.currentFBExtends;
         for (let i = 0; i < expr.fieldAccess.length; i++) {
-          const field = expr.fieldAccess[i]!;
+          const field = this.resolveCanonicalMemberName(
+            currentType,
+            expr.fieldAccess[i]!,
+          );
           const isLast = i === expr.fieldAccess.length - 1;
           if (isLast) {
             const propName = this.resolvePropertyName(currentType, field);
@@ -3760,7 +3777,10 @@ export class CodeGenerator {
     if (expr.fieldAccess.length > 0) {
       let currentType = this.currentScopeVarTypes.get(nameUpper);
       for (let i = 0; i < expr.fieldAccess.length; i++) {
-        const field = expr.fieldAccess[i]!;
+        const field = this.resolveCanonicalMemberName(
+          currentType,
+          expr.fieldAccess[i]!,
+        );
         const isLast = i === expr.fieldAccess.length - 1;
         // Bit access: numeric field like .0, .15, .31 → ((var >> N) & 1)
         if (/^\d+$/.test(field)) {
@@ -3829,22 +3849,26 @@ export class CodeGenerator {
             result = `((static_cast<uint64_t>(${result}) >> ${step.name}) & 1)`;
             continue;
           }
+          const fieldName = this.resolveCanonicalMemberName(
+            currentType,
+            step.name,
+          );
           // Property access on the last step
           if (isLast) {
-            const propName = this.resolvePropertyName(currentType, step.name);
+            const propName = this.resolvePropertyName(currentType, fieldName);
             if (propName) {
               result += `.get_${propName}()`;
               return result;
             }
           }
-          const fieldType = this.resolveMemberType(currentType, step.name);
+          const fieldType = this.resolveMemberType(currentType, fieldName);
           const fieldCppName = this.needsFieldMangling(
-            step.name,
+            fieldName,
             fieldType,
             currentType,
           )
-            ? `${step.name}_`
-            : step.name;
+            ? `${fieldName}_`
+            : fieldName;
           // Array elements store T directly — always use . for field access
           result += `.${fieldCppName}`;
           currentType = fieldType;
@@ -4795,6 +4819,19 @@ export class CodeGenerator {
     return this.propertyNameMap.get(key);
   }
 
+  /** Resolve a library compatibility spelling to its one emitted field. */
+  private resolveCanonicalMemberName(
+    typeName: string | undefined,
+    sourceName: string,
+  ): string {
+    if (!typeName) return sourceName;
+    return (
+      this.libraryFBFieldCanonicalNames.get(
+        `${typeName.toUpperCase()}.${sourceName.toUpperCase()}`,
+      ) ?? sourceName
+    );
+  }
+
   /**
    * Resolve the type of a member field on a given FB or struct type.
    * Used for chained access like ctrl.motor.Speed where we need to know
@@ -4837,7 +4874,11 @@ export class CodeGenerator {
 
     for (let i = 0; i < expr.fieldAccess.length - 1; i++) {
       if (!currentType) break;
-      currentType = this.resolveMemberType(currentType, expr.fieldAccess[i]!);
+      const field = this.resolveCanonicalMemberName(
+        currentType,
+        expr.fieldAccess[i]!,
+      );
+      currentType = this.resolveMemberType(currentType, field);
     }
 
     if (!currentType) return undefined;
@@ -4850,7 +4891,7 @@ export class CodeGenerator {
       objectCode = "this->";
       let ct: string | undefined = this.currentFBName;
       for (let i = 0; i < expr.fieldAccess.length - 1; i++) {
-        const f = expr.fieldAccess[i]!;
+        const f = this.resolveCanonicalMemberName(ct, expr.fieldAccess[i]!);
         const ft = this.resolveMemberType(ct, f);
         objectCode += (this.needsFieldMangling(f, ft, ct) ? `${f}_` : f) + ".";
         ct = ft;
@@ -4859,7 +4900,7 @@ export class CodeGenerator {
       objectCode = this.currentFBExtends + "::";
       let ct: string | undefined = this.currentFBExtends;
       for (let i = 0; i < expr.fieldAccess.length - 1; i++) {
-        const f = expr.fieldAccess[i]!;
+        const f = this.resolveCanonicalMemberName(ct, expr.fieldAccess[i]!);
         const ft = this.resolveMemberType(ct, f);
         objectCode += (this.needsFieldMangling(f, ft, ct) ? `${f}_` : f) + ".";
         ct = ft;
@@ -5186,9 +5227,14 @@ export class CodeGenerator {
       if (arg.isOutput) continue;
 
       if (arg.name) {
-        // Named argument: assign directly
+        // Named argument: resolve compatibility spellings to one canonical
+        // library field before emitting C++.
+        const parameterName = this.resolveCanonicalMemberName(
+          fbTypeName,
+          arg.name,
+        );
         this.emit(
-          `${indent}${instanceName}.${arg.name} = ${this.generateExpression(arg.value)};`,
+          `${indent}${instanceName}.${parameterName} = ${this.generateExpression(arg.value)};`,
         );
       } else if (inputParamNames && positionalIndex < inputParamNames.length) {
         // Positional argument: map to VAR_INPUT by position
@@ -5222,8 +5268,12 @@ export class CodeGenerator {
     // Capture output arguments (=> syntax), excluding ENO (already handled)
     for (const arg of filteredArgs) {
       if (arg.name && arg.isOutput) {
+        const parameterName = this.resolveCanonicalMemberName(
+          fbTypeName,
+          arg.name,
+        );
         this.emit(
-          `${indent}${this.generateExpression(arg.value)} = ${instanceName}.${arg.name};`,
+          `${indent}${this.generateExpression(arg.value)} = ${instanceName}.${parameterName};`,
         );
       }
     }

@@ -37,7 +37,7 @@ import {
 } from "fs";
 import { resolve, basename, dirname, join, relative, sep } from "path";
 import { platform } from "os";
-import { execFileSync } from "child_process";
+import { execFileSync, spawnSync } from "child_process";
 import { compile, getVersion, compileStlib } from "../index.js";
 import {
   formatDiagnostic,
@@ -777,31 +777,31 @@ function runTestMode(options: CLIOptions): void {
       return;
     }
 
-    // 8. Execute test binary and display results
-    let exitCode = 0;
-    try {
-      const output = execFileSync(binaryPath, [], {
-        encoding: "utf-8",
-        timeout: 30000,
-        env: getCxxEnv(options.gpp),
-      });
-      process.stdout.write(output);
-    } catch (err: unknown) {
-      const execErr = err as {
-        status?: number;
-        stdout?: string;
-        stderr?: string;
-        signal?: string;
-      };
-      if (execErr.stdout) {
-        process.stdout.write(execErr.stdout);
-      }
-      if (execErr.signal) {
+    // 8. Execute the test binary with inherited output handles. The CLI still
+    // waits synchronously for completion, but assertion/checkpoint lines now
+    // reach an MCP parent process as they are produced instead of being held in
+    // execFileSync's output buffer until the whole suite exits.
+    const execution = spawnSync(binaryPath, [], {
+      stdio: ["ignore", "inherit", "inherit"],
+      timeout: 30000,
+      env: getCxxEnv(options.gpp),
+    });
+    let exitCode = execution.status ?? 1;
+    if (execution.error) {
+      const code = (execution.error as NodeJS.ErrnoException).code;
+      if (code === "ETIMEDOUT") {
+        console.error("Error: Test binary timed out after 30000 ms");
+      } else {
         console.error(
-          `Error: Test binary crashed with signal ${execErr.signal}`,
+          `Error: Test binary execution failed: ${execution.error.message}`,
         );
       }
-      exitCode = execErr.status ?? 1;
+      exitCode = 1;
+    } else if (execution.signal) {
+      console.error(
+        `Error: Test binary crashed with signal ${execution.signal}`,
+      );
+      exitCode = 1;
     }
 
     // 9. Report the test result after the temporary build directory is

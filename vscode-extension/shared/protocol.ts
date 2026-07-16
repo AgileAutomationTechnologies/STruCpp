@@ -4,7 +4,11 @@
  * Shared LSP protocol types for STruC++ extension client ↔ server communication.
  */
 
-import { RequestType, RequestType0, NotificationType0 } from "vscode-languageserver/node.js";
+import {
+  RequestType,
+  RequestType0,
+  NotificationType0,
+} from "vscode-languageserver/node.js";
 
 // ---------------------------------------------------------------------------
 // strucpp/compile
@@ -55,11 +59,9 @@ export interface BuildResponse extends CompileResponse {
   replDir: string;
 }
 
-export const BuildRequest = new RequestType<
-  BuildParams,
-  BuildResponse,
-  void
->("strucpp/build");
+export const BuildRequest = new RequestType<BuildParams, BuildResponse, void>(
+  "strucpp/build",
+);
 
 // ---------------------------------------------------------------------------
 // strucpp/getSettings
@@ -127,9 +129,10 @@ export interface LibraryArchiveInfo {
       }>;
       functionBlocks: Array<{
         name: string;
-        inputs: Array<{ name: string; type: string }>;
-        outputs: Array<{ name: string; type: string }>;
-        inouts: Array<{ name: string; type: string }>;
+        inputs: Array<{ name: string; type: string; aliases?: string[] }>;
+        outputs: Array<{ name: string; type: string; aliases?: string[] }>;
+        inouts: Array<{ name: string; type: string; aliases?: string[] }>;
+        dominance?: "set" | "reset";
       }>;
       types: Array<{
         name: string;
@@ -149,10 +152,9 @@ export interface LibraryArchiveInfo {
   };
 }
 
-export const GetLibrariesRequest = new RequestType0<
-  LibraryArchiveInfo[],
-  void
->("strucpp/getLibraries");
+export const GetLibrariesRequest = new RequestType0<LibraryArchiveInfo[], void>(
+  "strucpp/getLibraries",
+);
 
 export const LibrariesChangedNotification = new NotificationType0(
   "strucpp/librariesChanged",

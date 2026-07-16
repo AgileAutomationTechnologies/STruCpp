@@ -22,10 +22,17 @@ import type {
   SymbolTables,
   Scope,
 } from "strucpp";
-import { ELEMENTARY_TYPES, typeName } from "strucpp";
+import {
+  ELEMENTARY_TYPES,
+  resolveFunctionBlockVariable,
+  typeName,
+} from "strucpp";
 import { getCursorContext } from "./cursor-context.js";
 import { getScopeForContext } from "./resolve-symbol.js";
-import { isTestFile, extractTestVarDeclarations } from "../../shared/test-utils.js";
+import {
+  isTestFile,
+  extractTestVarDeclarations,
+} from "../../shared/test-utils.js";
 import { stripCommentsAndStrings } from "./lsp-utils.js";
 
 /**
@@ -55,10 +62,19 @@ export function getCompletions(
       items = getTypeAnnotationCompletions(analysis);
       break;
     case "dot-access":
-      items = getDotAccessCompletions(analysis, ctx.prefixExpr, ctx.pouScope, isTest ? source : undefined);
+      items = getDotAccessCompletions(
+        analysis,
+        ctx.prefixExpr,
+        ctx.pouScope,
+        isTest ? source : undefined,
+      );
       break;
     case "body":
-      items = getBodyCompletions(analysis, ctx.pouScope, isTest ? source : undefined);
+      items = getBodyCompletions(
+        analysis,
+        ctx.pouScope,
+        isTest ? source : undefined,
+      );
       if (isTest) items.push(...getTestBodyCompletions());
       break;
   }
@@ -113,7 +129,8 @@ function getTopLevelCompletions(): CompletionItem[] {
       label: "interface",
       kind: CompletionItemKind.Keyword,
       insertTextFormat: InsertTextFormat.Snippet,
-      insertText: "interface ${1:IName}\n\tmethod ${2:MethodName}\n\t\t$0\n\tend_method\nend_interface",
+      insertText:
+        "interface ${1:IName}\n\tmethod ${2:MethodName}\n\t\t$0\n\tend_method\nend_interface",
       sortText: "0",
     },
     {
@@ -144,7 +161,9 @@ function getVarBlockCompletions(): CompletionItem[] {
 // Type annotation completions (after `:`)
 // ---------------------------------------------------------------------------
 
-function getTypeAnnotationCompletions(analysis: AnalysisResult): CompletionItem[] {
+function getTypeAnnotationCompletions(
+  analysis: AnalysisResult,
+): CompletionItem[] {
   const items: CompletionItem[] = [];
 
   // Elementary types
@@ -224,13 +243,19 @@ function getDotAccessCompletions(
 
   // For test files, try resolving via locally declared variable types
   if (testSource) {
-    const testVars = extractTestVarDeclarations(stripCommentsAndStrings(testSource));
+    const testVars = extractTestVarDeclarations(
+      stripCommentsAndStrings(testSource),
+    );
     const varType = testVars.get(segments[0].toUpperCase());
     if (varType) {
       // Walk remaining segments through type chain
       let currentTypeName = varType;
       for (let i = 1; i < segments.length; i++) {
-        const nextType = resolveMemberType(currentTypeName, segments[i], symbolTables);
+        const nextType = resolveMemberType(
+          currentTypeName,
+          segments[i],
+          symbolTables,
+        );
         if (!nextType) return [];
         currentTypeName = nextType;
       }
@@ -272,7 +297,11 @@ function resolveChainType(
   // Walk remaining segments
   for (let i = 1; i < segments.length; i++) {
     const memberName = segments[i];
-    const nextType = resolveMemberType(currentTypeName, memberName, symbolTables);
+    const nextType = resolveMemberType(
+      currentTypeName,
+      memberName,
+      symbolTables,
+    );
     if (!nextType) return undefined;
     currentTypeName = nextType;
   }
@@ -355,7 +384,11 @@ function resolveMemberType(
       type: { name: string };
     }>;
     for (const field of fields) {
-      if (field.names.some((n: string) => n.toUpperCase() === memberName.toUpperCase())) {
+      if (
+        field.names.some(
+          (n: string) => n.toUpperCase() === memberName.toUpperCase(),
+        )
+      ) {
         return field.type.name;
       }
     }
@@ -371,6 +404,9 @@ function findFBMember(
   symbolTables: SymbolTables,
 ): VariableSymbol | undefined {
   const upper = name.toUpperCase();
+
+  const resolved = resolveFunctionBlockVariable(fbSym, upper);
+  if (resolved) return resolved.variable;
 
   // Try inputs/outputs/inouts arrays first
   for (const arr of [fbSym.inputs, fbSym.outputs, fbSym.inouts]) {
@@ -440,7 +476,9 @@ function getMembersForType(
     // Methods from the declaration
     if (fbSym.declaration?.methods) {
       for (const m of fbSym.declaration.methods) {
-        if (!items.some((it) => it.label.toUpperCase() === m.name.toUpperCase())) {
+        if (
+          !items.some((it) => it.label.toUpperCase() === m.name.toUpperCase())
+        ) {
           items.push({
             label: m.name,
             kind: CompletionItemKind.Method,
@@ -499,9 +537,7 @@ function getBodyCompletions(
   const items: CompletionItem[] = [];
 
   // Statement keywords + snippets
-  items.push(
-    ...getStatementKeywordCompletions(),
-  );
+  items.push(...getStatementKeywordCompletions());
 
   const { symbolTables, stdFunctionRegistry } = analysis;
   if (!symbolTables) return items;
@@ -568,7 +604,9 @@ function getBodyCompletions(
 
   // For test files, add locally declared variables from VAR blocks
   if (testSource) {
-    const testVars = extractTestVarDeclarations(stripCommentsAndStrings(testSource));
+    const testVars = extractTestVarDeclarations(
+      stripCommentsAndStrings(testSource),
+    );
     for (const [name, varType] of testVars) {
       if (seen.has(name)) continue;
       seen.add(name);
@@ -824,7 +862,8 @@ function makeVariableCompletion(
   sym: VariableSymbol,
   sortText: string,
 ): CompletionItem {
-  const typeStr = sym.declaration?.type?.name ?? (sym.type ? typeName(sym.type) : undefined);
+  const typeStr =
+    sym.declaration?.type?.name ?? (sym.type ? typeName(sym.type) : undefined);
   return {
     label: sym.name,
     kind: CompletionItemKind.Variable,
@@ -836,7 +875,8 @@ function makeVariableCompletion(
 function formatFunctionSignature(sym: FunctionSymbol): string {
   const params = sym.parameters
     .map((p) => {
-      const typeStr = p.declaration?.type?.name ?? (p.type ? typeName(p.type) : "unknown");
+      const typeStr =
+        p.declaration?.type?.name ?? (p.type ? typeName(p.type) : "unknown");
       return `${p.name}: ${typeStr}`;
     })
     .join(", ");
@@ -853,7 +893,6 @@ function formatStdFunctionSignature(
   const ret = fn.specificReturnType ?? fn.returnConstraint;
   return `(${params}) : ${ret}`;
 }
-
 
 // ---------------------------------------------------------------------------
 // Original-case restoration

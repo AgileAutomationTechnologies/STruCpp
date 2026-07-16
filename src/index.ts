@@ -1002,6 +1002,12 @@ export type {
   TypeSymbol,
   EnumValueSymbol,
   SymbolKind,
+  FunctionBlockVariableResolution,
+  FunctionBlockFormalResolution,
+} from "./semantic/symbol-table.js";
+export {
+  resolveFunctionBlockFormalVariable,
+  resolveFunctionBlockVariable,
 } from "./semantic/symbol-table.js";
 
 // Re-export standard function registry
@@ -1071,8 +1077,19 @@ export type {
   StlibCompileResult,
   LibraryFunctionEntry,
   LibraryFBEntry,
+  LibraryVarType,
   LibraryTypeEntry,
 } from "./library/library-manifest.js";
+export {
+  isValidLibraryFBVariableName,
+  listLibraryFBVariables,
+  resolveLibraryFBVariable,
+  validateLibraryFBVariableAliases,
+} from "./library/variable-aliases.js";
+export type {
+  LibraryFBVariableDirection,
+  LibraryFBVariableResolution,
+} from "./library/variable-aliases.js";
 
 // Re-export CODESYS import
 export {

@@ -32,10 +32,18 @@
  */
 
 import { execSync } from "child_process";
-import { readFileSync, readdirSync, writeFileSync, existsSync, copyFileSync, statSync } from "fs";
+import {
+  readFileSync,
+  readdirSync,
+  writeFileSync,
+  existsSync,
+  copyFileSync,
+  statSync,
+} from "fs";
 import { resolve, dirname, relative, sep, posix } from "path";
 import { fileURLToPath, pathToFileURL } from "url";
 import { buildIecTypesJson } from "./build-iec-types-json.mjs";
+import { buildIecFunctionBlockContracts } from "./build-iec-function-block-contracts.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -107,22 +115,22 @@ async function refreshAndLoadCompiler() {
   }
 
   const compiler = await importFile(
-    resolve(projectRoot, "dist/library/library-compiler.js")
+    resolve(projectRoot, "dist/library/library-compiler.js"),
   );
   const nodeLoader = await importFile(
-    resolve(projectRoot, "dist/node/library-loader.js")
+    resolve(projectRoot, "dist/node/library-loader.js"),
   );
   const nodeConfig = await importFile(
-    resolve(projectRoot, "dist/node/library-config.js")
+    resolve(projectRoot, "dist/node/library-config.js"),
   );
   const pureConfig = await importFile(
-    resolve(projectRoot, "dist/library/library-config.js")
+    resolve(projectRoot, "dist/library/library-config.js"),
   );
   const codesysImport = await importFile(
-    resolve(projectRoot, "dist/library/codesys-import/index.js")
+    resolve(projectRoot, "dist/library/codesys-import/index.js"),
   );
   const stdFnRegistry = await importFile(
-    resolve(projectRoot, "dist/semantic/std-function-registry.js")
+    resolve(projectRoot, "dist/semantic/std-function-registry.js"),
   );
   compileStlib = compiler.compileStlib;
   loadStlibFromFile = nodeLoader.loadStlibFromFile;
@@ -139,7 +147,13 @@ async function refreshAndLoadCompiler() {
  * (.library file) build paths — the only thing that differs upstream is
  * how the `sources` array gets produced.
  */
-function compileAndWrite({ sources, config, stlibPath, dependencies, sourcesDir }) {
+function compileAndWrite({
+  sources,
+  config,
+  stlibPath,
+  dependencies,
+  sourcesDir,
+}) {
   const result = compileStlib(sources, {
     name: config.name,
     version: config.version,
@@ -151,10 +165,10 @@ function compileAndWrite({ sources, config, stlibPath, dependencies, sourcesDir 
   });
 
   if (!result.success) {
-    const errs = result.errors.map((e) => `  ${e.file ?? ""}:${e.line ?? 0}: ${e.message}`);
-    throw new Error(
-      `Failed to rebuild ${config.name}:\n${errs.join("\n")}`,
+    const errs = result.errors.map(
+      (e) => `  ${e.file ?? ""}:${e.line ?? 0}: ${e.message}`,
     );
+    throw new Error(`Failed to rebuild ${config.name}:\n${errs.join("\n")}`);
   }
 
   if (config.displayName) {
@@ -167,18 +181,30 @@ function compileAndWrite({ sources, config, stlibPath, dependencies, sourcesDir 
   const docReport = applyLibraryConfigDocumentation(result.archive, config);
   if (
     docReport.unknownBlockDocs.length > 0 ||
-    docReport.unknownFunctionDocs.length > 0
+    docReport.unknownFunctionDocs.length > 0 ||
+    docReport.unknownBlockVariables.length > 0
   ) {
     const lines = [
-      ...docReport.unknownBlockDocs.map((n) => `  blocks["${n}"] — not in compiled manifest`),
-      ...docReport.unknownFunctionDocs.map((n) => `  functions["${n}"] — not in compiled manifest`),
+      ...docReport.unknownBlockDocs.map(
+        (n) => `  blocks["${n}"] — not in compiled manifest`,
+      ),
+      ...docReport.unknownFunctionDocs.map(
+        (n) => `  functions["${n}"] — not in compiled manifest`,
+      ),
+      ...docReport.unknownBlockVariables.map(
+        (n) => `  variable alias target "${n}" — not in compiled manifest`,
+      ),
     ];
     throw new Error(
       `${sourcesDir}/library.json references unknown symbols:\n${lines.join("\n")}`,
     );
   }
 
-  writeFileSync(stlibPath, JSON.stringify(result.archive, null, 2) + "\n", "utf-8");
+  writeFileSync(
+    stlibPath,
+    JSON.stringify(result.archive, null, 2) + "\n",
+    "utf-8",
+  );
   return result.archive;
 }
 
@@ -226,7 +252,12 @@ function collectStFilesRecursive(dir) {
  * When omitted, every .st under the lib directory is picked up in
  * sorted order.
  */
-function rebuildLibraryFromDisk({ libDirName, stlibPath, orderedSources, dependencies }) {
+function rebuildLibraryFromDisk({
+  libDirName,
+  stlibPath,
+  orderedSources,
+  dependencies,
+}) {
   const sourcesDir = resolve(sourcesRoot, libDirName);
   if (!existsSync(sourcesDir)) {
     throw new Error(`Source directory not found: ${sourcesDir}`);
@@ -264,7 +295,13 @@ function rebuildLibraryFromDisk({ libDirName, stlibPath, orderedSources, depende
     return entry;
   });
 
-  return compileAndWrite({ sources, config, stlibPath, dependencies, sourcesDir });
+  return compileAndWrite({
+    sources,
+    config,
+    stlibPath,
+    dependencies,
+    sourcesDir,
+  });
 }
 
 /**
@@ -279,7 +316,11 @@ function rebuildLibraryFromDisk({ libDirName, stlibPath, orderedSources, depende
  * sources into compileAndWrite. The .library file is the canonical source
  * of truth — never the .stlib output.
  */
-async function rebuildLibraryFromCodesys({ libDirName, stlibPath, dependencies }) {
+async function rebuildLibraryFromCodesys({
+  libDirName,
+  stlibPath,
+  dependencies,
+}) {
   const sourcesDir = resolve(sourcesRoot, libDirName);
   if (!existsSync(sourcesDir)) {
     throw new Error(`Source directory not found: ${sourcesDir}`);
@@ -477,11 +518,21 @@ export async function setup() {
       "timer.st",
     ],
   });
+  const iecContractsPath = resolve(
+    libsDir,
+    "iec-function-block-contracts.json",
+  );
+  buildIecFunctionBlockContracts({
+    archivePath: iecPath,
+    outputPath: iecContractsPath,
+  });
 
   // 2. Additional Function Blocks — disk-backed; PID instantiates
   //    INTEGRAL/DERIVATIVE intra-library so the file order matters.
   if (existsSync(resolve(sourcesRoot, "additional-function-blocks"))) {
-    console.log("[rebuild-libs] Rebuilding additional-function-blocks.stlib...");
+    console.log(
+      "[rebuild-libs] Rebuilding additional-function-blocks.stlib...",
+    );
     rebuildLibraryFromDisk({
       libDirName: "additional-function-blocks",
       stlibPath: additionalFbPath,
@@ -501,7 +552,9 @@ export async function setup() {
   //    rebuild-libs runs the codesys-importer at build time to extract
   //    ST sources, then compiles them. Depends on iec-standard-fb.
   if (existsSync(resolve(sourcesRoot, "oscat-basic"))) {
-    console.log("[rebuild-libs] Rebuilding oscat-basic.stlib (from codesys)...");
+    console.log(
+      "[rebuild-libs] Rebuilding oscat-basic.stlib (from codesys)...",
+    );
     const iecArchive = loadStlibFromFile(iecPath);
     await rebuildLibraryFromCodesys({
       libDirName: "oscat-basic",
@@ -547,10 +600,19 @@ export async function setup() {
       copyFileSync(oscatPath, resolve(vscodeLibsDir, "oscat-basic.stlib"));
     }
     if (existsSync(stdFnPath)) {
-      copyFileSync(stdFnPath, resolve(vscodeLibsDir, "iec-std-functions.stlib"));
+      copyFileSync(
+        stdFnPath,
+        resolve(vscodeLibsDir, "iec-std-functions.stlib"),
+      );
     }
     if (existsSync(iecTypesJsonPath)) {
       copyFileSync(iecTypesJsonPath, resolve(vscodeLibsDir, "iec-types.json"));
+    }
+    if (existsSync(iecContractsPath)) {
+      copyFileSync(
+        iecContractsPath,
+        resolve(vscodeLibsDir, "iec-function-block-contracts.json"),
+      );
     }
   }
 
@@ -558,8 +620,8 @@ export async function setup() {
 }
 
 // Allow running standalone: node scripts/rebuild-libs.mjs
-const isDirectRun = process.argv[1] &&
-  resolve(process.argv[1]) === resolve(__filename);
+const isDirectRun =
+  process.argv[1] && resolve(process.argv[1]) === resolve(__filename);
 if (isDirectRun) {
   setup().catch((err) => {
     console.error(err.message);

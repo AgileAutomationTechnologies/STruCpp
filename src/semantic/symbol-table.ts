@@ -65,6 +65,8 @@ export interface VariableSymbol extends BaseSymbol {
    *  AST initial value). Presence marks the input as OPTIONAL. User-defined
    *  POUs instead carry their default on `declaration.initialValue`. */
   initialValue?: string | undefined;
+  /** Alternate source-level names that resolve to this canonical symbol. */
+  aliases?: string[] | undefined;
 }
 
 /**
@@ -96,6 +98,92 @@ export interface FunctionBlockSymbol extends BaseSymbol {
   outputs: VariableSymbol[];
   inouts: VariableSymbol[];
   locals: VariableSymbol[];
+}
+
+export interface FunctionBlockVariableResolution {
+  canonicalName: string;
+  isAlias: boolean;
+  variable: VariableSymbol;
+}
+
+export interface FunctionBlockFormalResolution extends FunctionBlockVariableResolution {
+  direction: "input" | "output" | "inout";
+}
+
+/**
+ * Resolve a public FB variable by canonical name or alias. Canonical variables
+ * remain the only entries in the ordered arrays, so positional calls and
+ * editor signatures are unaffected by compatibility spellings.
+ */
+export function resolveFunctionBlockVariable(
+  fb: FunctionBlockSymbol,
+  sourceName: string,
+): FunctionBlockVariableResolution | undefined {
+  const requested = sourceName.toUpperCase();
+  const variables = [...fb.inputs, ...fb.outputs, ...fb.inouts, ...fb.locals];
+  for (const variable of variables) {
+    if (variable.name.toUpperCase() === requested) {
+      return {
+        canonicalName: variable.name,
+        isAlias: false,
+        variable,
+      };
+    }
+  }
+  for (const variable of variables) {
+    if (
+      variable.aliases?.some((alias) => alias.toUpperCase() === requested) ===
+      true
+    ) {
+      return {
+        canonicalName: variable.name,
+        isAlias: true,
+        variable,
+      };
+    }
+  }
+  return undefined;
+}
+
+/** Resolve only callable FB formals, excluding implementation locals. */
+export function resolveFunctionBlockFormalVariable(
+  fb: FunctionBlockSymbol,
+  sourceName: string,
+): FunctionBlockFormalResolution | undefined {
+  const requested = sourceName.toUpperCase();
+  const groups = [
+    { direction: "input" as const, variables: fb.inputs },
+    { direction: "output" as const, variables: fb.outputs },
+    { direction: "inout" as const, variables: fb.inouts },
+  ];
+  for (const { direction, variables } of groups) {
+    for (const variable of variables) {
+      if (variable.name.toUpperCase() === requested) {
+        return {
+          canonicalName: variable.name,
+          direction,
+          isAlias: false,
+          variable,
+        };
+      }
+    }
+  }
+  for (const { direction, variables } of groups) {
+    for (const variable of variables) {
+      if (
+        variable.aliases?.some((alias) => alias.toUpperCase() === requested) ===
+        true
+      ) {
+        return {
+          canonicalName: variable.name,
+          direction,
+          isAlias: true,
+          variable,
+        };
+      }
+    }
+  }
+  return undefined;
 }
 
 /**

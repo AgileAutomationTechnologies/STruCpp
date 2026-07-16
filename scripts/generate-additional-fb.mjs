@@ -20,12 +20,18 @@
  * Run: npm run build:additional-fb
  */
 
-import { readFileSync, readdirSync, writeFileSync, mkdirSync, existsSync } from "fs";
+import {
+  readFileSync,
+  readdirSync,
+  writeFileSync,
+  mkdirSync,
+  existsSync,
+} from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath, pathToFileURL } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
-const __dirname  = dirname(__filename);
+const __dirname = dirname(__filename);
 const projectRoot = resolve(__dirname, "..");
 
 function importFile(path) {
@@ -33,15 +39,20 @@ function importFile(path) {
 }
 
 const { compileStlib } = await importFile(
-  resolve(projectRoot, "dist/library/library-compiler.js")
+  resolve(projectRoot, "dist/library/library-compiler.js"),
 );
 const { loadLibraryConfig, applyLibraryConfigDocumentation } = await importFile(
-  resolve(projectRoot, "dist/library/library-config.js")
+  resolve(projectRoot, "dist/library/library-config.js"),
 );
 
-const sourcesDir = resolve(projectRoot, "libs", "sources", "additional-function-blocks");
-const libsDir    = resolve(projectRoot, "libs");
-const outPath    = resolve(libsDir, "additional-function-blocks.stlib");
+const sourcesDir = resolve(
+  projectRoot,
+  "libs",
+  "sources",
+  "additional-function-blocks",
+);
+const libsDir = resolve(projectRoot, "libs");
+const outPath = resolve(libsDir, "additional-function-blocks.stlib");
 
 if (!existsSync(sourcesDir)) {
   console.error(`Error: sources directory not found: ${sourcesDir}`);
@@ -62,7 +73,9 @@ const ORDERED = [
   "ramp.st",
   "hysteresis.st",
 ];
-const onDisk = new Set(readdirSync(sourcesDir).filter((f) => f.endsWith(".st")));
+const onDisk = new Set(
+  readdirSync(sourcesDir).filter((f) => f.endsWith(".st")),
+);
 const missing = ORDERED.filter((f) => !onDisk.has(f));
 if (missing.length > 0) {
   console.error(
@@ -98,14 +111,24 @@ if (config.description) {
 const docReport = applyLibraryConfigDocumentation(result.archive, config);
 if (
   docReport.unknownBlockDocs.length > 0 ||
-  docReport.unknownFunctionDocs.length > 0
+  docReport.unknownFunctionDocs.length > 0 ||
+  docReport.unknownBlockVariables.length > 0
 ) {
   console.error("Error: library.json references unknown symbols:");
   for (const name of docReport.unknownBlockDocs) {
-    console.error(`  - blocks["${name}"] — no FB by that name in the compiled manifest`);
+    console.error(
+      `  - blocks["${name}"] — no FB by that name in the compiled manifest`,
+    );
   }
   for (const name of docReport.unknownFunctionDocs) {
-    console.error(`  - functions["${name}"] — no function by that name in the compiled manifest`);
+    console.error(
+      `  - functions["${name}"] — no function by that name in the compiled manifest`,
+    );
+  }
+  for (const name of docReport.unknownBlockVariables) {
+    console.error(
+      `  - variable alias target "${name}" — no variable by that name in the compiled manifest`,
+    );
   }
   process.exit(1);
 }
@@ -113,10 +136,12 @@ if (
 mkdirSync(libsDir, { recursive: true });
 writeFileSync(outPath, JSON.stringify(result.archive, null, 2) + "\n", "utf-8");
 
-const fbCount  = result.archive.manifest.functionBlocks.length;
+const fbCount = result.archive.manifest.functionBlocks.length;
 const docCount = docReport.blocksDocumented;
-const undoc    = fbCount - docCount;
-const sizeKB   = Math.round(Buffer.byteLength(JSON.stringify(result.archive)) / 1024);
+const undoc = fbCount - docCount;
+const sizeKB = Math.round(
+  Buffer.byteLength(JSON.stringify(result.archive)) / 1024,
+);
 const undocSuffix = undoc > 0 ? `, ${undoc} undocumented` : "";
 console.log(
   `Generated ${outPath} (${fbCount} function blocks, ` +
