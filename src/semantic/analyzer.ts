@@ -63,6 +63,32 @@ interface ParsedAddress {
   bitIndex: number;
 }
 
+const BISTABLE_FORMAL_CORRECTIONS: Record<
+  "RS" | "SR",
+  Record<string, string>
+> = {
+  RS: { SET1: "SET", RESET: "RESET1" },
+  SR: { SET: "SET1", RESET1: "RESET" },
+};
+
+function bistableFormalCorrection(
+  functionBlockName: string,
+  parameterName: string,
+): { code: string; suggestion: string } | undefined {
+  const block = functionBlockName.toUpperCase();
+  if (block !== "RS" && block !== "SR") return undefined;
+  const replacement =
+    BISTABLE_FORMAL_CORRECTIONS[block][parameterName.toUpperCase()];
+  if (!replacement) return undefined;
+  const alternative = block === "RS" ? "SR" : "RS";
+  return {
+    code: "IEC_FB_RS_SR_FORMAL_MISMATCH",
+    suggestion:
+      `Replace named parameter '${parameterName}' with '${replacement}' for the ${block} instance. ` +
+      `If ${alternative} dominance was intended, declare the instance as ${alternative} instead.`,
+  };
+}
+
 /**
  * Parse a located variable address string.
  * @param address Address string like "%IX0.0" or "%QW10"
@@ -972,6 +998,7 @@ export class SemanticAnalyzer {
     line: number,
     column: number,
     file?: string,
+    details: Pick<CompileError, "code" | "suggestion"> = {},
   ): void {
     this.errors.push({
       message,
@@ -979,6 +1006,7 @@ export class SemanticAnalyzer {
       column,
       severity: "error",
       ...(file ? { file } : {}),
+      ...details,
     });
   }
 
@@ -1885,6 +1913,7 @@ export class SemanticAnalyzer {
           }
         : declaredResolution;
       if (!resolved) {
+        const bistableCorrection = bistableFormalCorrection(fb.name, arg.name);
         this.addError(
           `Unknown parameter '${arg.name}' for function block '${fb.name}' on ` +
             `${invocationContext}${arg.sourceSpan.startLine}). ` +
@@ -1892,6 +1921,7 @@ export class SemanticAnalyzer {
           arg.sourceSpan.startLine,
           arg.sourceSpan.startCol,
           arg.sourceSpan.file,
+          bistableCorrection,
         );
         continue;
       }
@@ -3118,6 +3148,11 @@ export class SemanticAnalyzer {
       case "ArrayLiteralExpression":
         for (const elem of expr.elements) {
           this.checkExpressionForUndeclaredVars(elem, scope, ctx);
+        }
+        break;
+      case "StructLiteralExpression":
+        for (const field of expr.fields) {
+          this.checkExpressionForUndeclaredVars(field.value, scope, ctx);
         }
         break;
       case "NewExpression":

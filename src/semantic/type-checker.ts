@@ -22,6 +22,8 @@ import type {
   ElementaryType,
   ReferenceType,
   StructType,
+  StructLiteralExpression,
+  VarDeclaration,
   CompilationUnit,
   Statement,
   VarBlock,
@@ -348,6 +350,8 @@ export class TypeChecker {
         // Array literals don't have an inherent type — they get their type from the assignment target
         return undefined;
       }
+      case "StructLiteralExpression":
+        return expr.resolvedType;
       default:
         return undefined;
     }
@@ -821,6 +825,14 @@ export class TypeChecker {
     for (const block of blocks) {
       for (const decl of block.declarations) {
         if (!decl.initialValue) continue;
+        if (decl.initialValue.kind === "StructLiteralExpression") {
+          this.validateStructInitializer(
+            decl.initialValue,
+            decl.type.name,
+            scope,
+          );
+          continue;
+        }
         const targetType = ELEMENTARY_TYPES[decl.type.name.toUpperCase()];
         if (!targetType) continue; // Non-elementary types — handled elsewhere
         const valueType = this.resolveExprType(decl.initialValue, scope);
@@ -842,6 +854,96 @@ export class TypeChecker {
         );
       }
     }
+  }
+
+  /** Validate a declaration-only named-field STRUCT initializer. */
+  private validateStructInitializer(
+    initializer: StructLiteralExpression,
+    declaredTypeName: string,
+    scope: Scope,
+  ): IECType | undefined {
+    const typeSymbol = this.symbolTables.lookupType(declaredTypeName);
+    const definition = typeSymbol?.declaration.definition;
+    if (!typeSymbol || definition?.kind !== "StructDefinition") {
+      this.addError(
+        `Named-field initializer requires a STRUCT type; '${declaredTypeName}' is not a STRUCT`,
+        initializer.sourceSpan.startLine,
+        initializer.sourceSpan.startCol,
+      );
+      return undefined;
+    }
+
+    const declaredFields = new Map<
+      string,
+      { declaration: VarDeclaration; canonicalName: string }
+    >();
+    const fieldOrder: string[] = [];
+    for (const fieldDeclaration of definition.fields) {
+      for (const fieldName of fieldDeclaration.names) {
+        declaredFields.set(fieldName.toUpperCase(), {
+          declaration: fieldDeclaration,
+          canonicalName: fieldName,
+        });
+        fieldOrder.push(fieldName);
+      }
+    }
+
+    initializer.structTypeName = typeSymbol.declaration.name;
+    initializer.fieldOrder = fieldOrder;
+    initializer.resolvedType = typeSymbol.resolvedType;
+
+    const seen = new Set<string>();
+    for (const field of initializer.fields) {
+      const fieldKey = field.name.toUpperCase();
+      if (seen.has(fieldKey)) {
+        this.addError(
+          `Duplicate field '${field.name}' in initializer for STRUCT '${declaredTypeName}'`,
+          field.sourceSpan.startLine,
+          field.sourceSpan.startCol,
+        );
+        continue;
+      }
+      seen.add(fieldKey);
+
+      const declaredField = declaredFields.get(fieldKey);
+      if (!declaredField) {
+        this.addError(
+          `Unknown field '${field.name}' in initializer for STRUCT '${declaredTypeName}'`,
+          field.sourceSpan.startLine,
+          field.sourceSpan.startCol,
+        );
+        continue;
+      }
+
+      if (field.value.kind === "StructLiteralExpression") {
+        this.validateStructInitializer(
+          field.value,
+          declaredField.declaration.type.name,
+          scope,
+        );
+        continue;
+      }
+
+      const fieldType = this.resolveNamedType(
+        declaredField.declaration.type.name,
+      );
+      const valueType = this.resolveExprType(field.value, scope);
+      this.validateAssignment(
+        fieldType,
+        valueType,
+        {
+          kind: "VariableExpression",
+          sourceSpan: field.sourceSpan,
+          name: declaredField.canonicalName,
+          fieldAccess: [],
+          subscripts: [],
+          isDereference: false,
+        },
+        field.value,
+      );
+    }
+
+    return typeSymbol.resolvedType;
   }
 
   /**

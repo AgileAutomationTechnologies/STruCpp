@@ -573,7 +573,8 @@ export type Expression =
   | RefExpression
   | DrefExpression
   | NewExpression
-  | ArrayLiteralExpression;
+  | ArrayLiteralExpression
+  | StructLiteralExpression;
 
 /**
  * Binary operator
@@ -739,6 +740,20 @@ export interface NewExpression extends TypedNode {
 export interface ArrayLiteralExpression extends TypedNode {
   kind: "ArrayLiteralExpression";
   elements: Expression[];
+}
+
+/** TwinCAT named-field STRUCT initializer, valid only in declarations. */
+export interface StructLiteralExpression extends TypedNode {
+  kind: "StructLiteralExpression";
+  fields: StructInitializerField[];
+  structTypeName?: string;
+  fieldOrder?: string[];
+}
+
+export interface StructInitializerField extends ASTNode {
+  kind: "StructInitializerField";
+  name: string;
+  value: Expression;
 }
 
 // =============================================================================

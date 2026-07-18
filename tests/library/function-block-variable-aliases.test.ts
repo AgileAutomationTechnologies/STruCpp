@@ -177,6 +177,47 @@ describe("library function-block variable aliases", () => {
     expect(unknown.errors[0]).toMatchObject({ line: 2 });
   });
 
+  it("provides exact RS/SR formal corrections without accepting invalid TwinCAT ST", () => {
+    const archive = loadStlibFromFile("libs/iec-standard-fb.stlib");
+    const rs = compile(
+      `PROGRAM Main VAR latch : RS; END_VAR
+       latch(SET1 := TRUE, RESET := FALSE); END_PROGRAM`,
+      { libraries: [archive] },
+    );
+    const sr = compile(
+      `PROGRAM Main VAR latch : SR; END_VAR
+       latch(SET := TRUE, RESET1 := FALSE); END_PROGRAM`,
+      { libraries: [archive] },
+    );
+
+    expect(rs.success).toBe(false);
+    expect(rs.errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "IEC_FB_RS_SR_FORMAL_MISMATCH",
+          suggestion: expect.stringContaining("'SET1' with 'SET'"),
+        }),
+        expect.objectContaining({
+          code: "IEC_FB_RS_SR_FORMAL_MISMATCH",
+          suggestion: expect.stringContaining("'RESET' with 'RESET1'"),
+        }),
+      ]),
+    );
+    expect(sr.success).toBe(false);
+    expect(sr.errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "IEC_FB_RS_SR_FORMAL_MISMATCH",
+          suggestion: expect.stringContaining("'SET' with 'SET1'"),
+        }),
+        expect.objectContaining({
+          code: "IEC_FB_RS_SR_FORMAL_MISMATCH",
+          suggestion: expect.stringContaining("'RESET1' with 'RESET'"),
+        }),
+      ]),
+    );
+  });
+
   it("rejects manifest aliases that collide with canonical names or aliases", () => {
     const base = {
       name: "bad-alias-lib",

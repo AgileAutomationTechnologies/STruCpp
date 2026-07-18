@@ -488,11 +488,43 @@ export class STParser extends CstParser {
    * Handles: x := 5; and arr := 0, 31, 59, 90, ...;
    */
   public initializerExpression = this.RULE("initializerExpression", () => {
-    this.SUBRULE(this.expression);
-    this.MANY(() => {
-      this.CONSUME(tokens.Comma);
-      this.SUBRULE2(this.expression);
+    this.OR([
+      {
+        ALT: () => this.SUBRULE(this.structInitializer),
+        GATE: this.BACKTRACK(this.structInitializer),
+      },
+      {
+        ALT: () => {
+          this.SUBRULE(this.expression);
+          this.MANY(() => {
+            this.CONSUME(tokens.Comma);
+            this.SUBRULE2(this.expression);
+          });
+        },
+      },
+    ]);
+  });
+
+  /** Declaration-only TwinCAT named-field STRUCT initializer. */
+  public structInitializer = this.RULE("structInitializer", () => {
+    this.CONSUME(tokens.LParen);
+    this.AT_LEAST_ONE_SEP({
+      SEP: tokens.Comma,
+      DEF: () => this.SUBRULE(this.structInitializerField),
     });
+    this.CONSUME(tokens.RParen);
+  });
+
+  public structInitializerField = this.RULE("structInitializerField", () => {
+    this.SUBRULE(this.identifierOrKeyword);
+    this.CONSUME(tokens.Assign);
+    this.OR([
+      {
+        ALT: () => this.SUBRULE(this.structInitializer),
+        GATE: this.BACKTRACK(this.structInitializer),
+      },
+      { ALT: () => this.SUBRULE(this.expression) },
+    ]);
   });
 
   /**

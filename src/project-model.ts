@@ -69,6 +69,8 @@ export interface ProjectVarDeclaration {
   typeName: string;
   maxLength?: number | string; // For STRING(n) / WSTRING(n) parameterized length; string for constant names
   initialValue?: string;
+  /** Typed initializer AST retained for declaration-only STRUCT aggregates. */
+  initialValueExpression?: Expression;
   isConstant: boolean;
   isRetain: boolean;
   address?: string;
@@ -770,6 +772,9 @@ export class ProjectModelBuilder {
       isConstant: block.isConstant,
       isRetain: block.isRetain,
       ...(initialValue !== undefined ? { initialValue } : {}),
+      ...(decl.initialValue !== undefined
+        ? { initialValueExpression: decl.initialValue }
+        : {}),
       ...(decl.address !== undefined ? { address: decl.address } : {}),
       ...(decl.type.maxLength !== undefined
         ? { maxLength: decl.type.maxLength }
@@ -827,6 +832,13 @@ export class ProjectModelBuilder {
    * Convert an expression to a string representation.
    */
   private expressionToString(expr: Expression): string {
+    if (expr.kind === "StructLiteralExpression") {
+      return `(${expr.fields
+        .map(
+          (field) => `${field.name} := ${this.expressionToString(field.value)}`,
+        )
+        .join(", ")})`;
+    }
     if (expr.kind === "LiteralExpression") {
       const lit = expr;
       return lit.rawValue;

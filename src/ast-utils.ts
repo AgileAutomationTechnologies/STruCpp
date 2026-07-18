@@ -52,6 +52,7 @@ import type {
   DrefExpression,
   NewExpression,
   ArrayLiteralExpression,
+  StructLiteralExpression,
   AssertCall,
   MockFunctionStatement,
   MockVerifyCallCountStatement,
@@ -344,6 +345,7 @@ const EXPRESSION_KINDS = new Set([
   "DrefExpression",
   "NewExpression",
   "ArrayLiteralExpression",
+  "StructLiteralExpression",
 ]);
 
 function isExpression(node: ASTNode): boolean {
@@ -651,6 +653,12 @@ function getChildren(node: ASTNode): ASTNode[] {
     case "ArrayLiteralExpression": {
       const ale = node as ArrayLiteralExpression;
       children.push(...ale.elements);
+      break;
+    }
+
+    case "StructLiteralExpression": {
+      const sle = node as StructLiteralExpression;
+      children.push(...sle.fields, ...sle.fields.map((field) => field.value));
       break;
     }
 

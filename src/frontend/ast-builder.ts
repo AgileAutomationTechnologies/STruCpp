@@ -46,6 +46,8 @@ import type {
   NewExpression,
   DeleteStatement,
   ArrayLiteralExpression,
+  StructLiteralExpression,
+  StructInitializerField,
   FunctionCallExpression,
   MethodCallExpression,
   FunctionCallStatement,
@@ -1355,8 +1357,13 @@ export class ASTBuilder {
     const initExprNode = getFirstNode(children.initializerExpression);
     if (initExprNode) {
       const initChildren = initExprNode.children as CstChildren;
+      const structInitializerNode = getFirstNode(
+        initChildren.structInitializer,
+      );
       const exprNodes = getAllNodes(initChildren.expression);
-      if (exprNodes.length > 1) {
+      if (structInitializerNode) {
+        initialValue = this.buildStructInitializer(structInitializerNode);
+      } else if (exprNodes.length > 1) {
         // Multiple expressions → ArrayLiteralExpression
         const elements: Expression[] = [];
         for (const en of exprNodes) {
@@ -1395,6 +1402,41 @@ export class ASTBuilder {
       type,
       ...(initialValue !== undefined ? { initialValue } : {}),
       ...(address !== undefined ? { address } : {}),
+    };
+  }
+
+  /** Build a named-field STRUCT initializer from a declaration initializer. */
+  private buildStructInitializer(node: CstNode): StructLiteralExpression {
+    const children = node.children as CstChildren;
+    const fields: StructInitializerField[] = [];
+    for (const fieldNode of getAllNodes(children.structInitializerField)) {
+      const fieldChildren = fieldNode.children as CstChildren;
+      const name = getAllIdentifierOrKeywordImages(
+        fieldChildren.identifierOrKeyword,
+      )[0];
+      if (!name) continue;
+
+      const nestedNode = getFirstNode(fieldChildren.structInitializer);
+      const expressionNode = getFirstNode(fieldChildren.expression);
+      const value = nestedNode
+        ? this.buildStructInitializer(nestedNode)
+        : expressionNode
+          ? this.buildExpression(expressionNode)
+          : undefined;
+      if (!value) continue;
+
+      fields.push({
+        kind: "StructInitializerField",
+        sourceSpan: nodeToSourceSpan(fieldNode),
+        name,
+        value,
+      });
+    }
+
+    return {
+      kind: "StructLiteralExpression",
+      sourceSpan: nodeToSourceSpan(node),
+      fields,
     };
   }
 

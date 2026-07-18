@@ -27,6 +27,7 @@ import type {
   UnaryExpression,
   LiteralExpression,
   VariableExpression,
+  StructLiteralExpression,
   AccessStep,
   ExternalCodePragma,
   MethodDeclaration,
@@ -41,6 +42,7 @@ import type {
   ProjectModel,
   ConfigurationDecl,
   ProgramDecl,
+  ProjectVarDeclaration,
 } from "../project-model.js";
 import type {
   LibraryChunk,
@@ -2670,7 +2672,7 @@ export class CodeGenerator {
         ) {
           continue;
         }
-        const initVal = this.getDefaultValue(decl.typeName, decl.initialValue);
+        const initVal = this.getProjectDeclarationInitialValue(decl);
         // Skip user-defined types (empty initVal) - they use default constructors
         if (initVal) {
           inits.push(`${decl.name}(${initVal})`);
@@ -2710,7 +2712,7 @@ export class CodeGenerator {
         ) {
           continue;
         }
-        const initVal = this.getDefaultValue(decl.typeName, decl.initialValue);
+        const initVal = this.getProjectDeclarationInitialValue(decl);
         // Skip user-defined types (empty initVal) - they use default constructors
         if (initVal) {
           inits.push(`${decl.name}(${initVal})`);
@@ -2899,7 +2901,7 @@ export class CodeGenerator {
 
     // Initialize global variables
     for (const gvar of config.globalVars) {
-      const initVal = this.getDefaultValue(gvar.typeName, gvar.initialValue);
+      const initVal = this.getProjectDeclarationInitialValue(gvar);
       // Skip user-defined types (empty initVal) - they use default constructors
       if (initVal) {
         inits.push(`${gvar.name}(${initVal})`);
@@ -3643,7 +3645,36 @@ export class CodeGenerator {
         const elements = expr.elements.map((e) => this.generateExpression(e));
         return `{${elements.join(", ")}}`;
       }
+      case "StructLiteralExpression":
+        return this.generateStructLiteralExpression(expr);
     }
+  }
+
+  /** Lower a declaration-only named-field initializer to a C++ aggregate. */
+  private generateStructLiteralExpression(
+    expr: StructLiteralExpression,
+  ): string {
+    const fieldsByName = new Map(
+      expr.fields.map((field) => [field.name.toUpperCase(), field]),
+    );
+    const fieldOrder =
+      expr.fieldOrder ?? expr.fields.map((field) => field.name);
+    let finalInitializedIndex = -1;
+    for (let index = 0; index < fieldOrder.length; index++) {
+      if (fieldsByName.has(fieldOrder[index]!.toUpperCase())) {
+        finalInitializedIndex = index;
+      }
+    }
+
+    const values: string[] = [];
+    for (let index = 0; index <= finalInitializedIndex; index++) {
+      const field = fieldsByName.get(fieldOrder[index]!.toUpperCase());
+      values.push(field ? this.generateExpression(field.value) : "{}");
+    }
+    const typeName = expr.structTypeName
+      ? this.typeCodeGen.mapTypeToCpp(expr.structTypeName)
+      : "";
+    return `${typeName}{${values.join(", ")}}`;
   }
 
   /**
@@ -5649,6 +5680,17 @@ export class CodeGenerator {
   /**
    * Get the default value for a type.
    */
+  private getProjectDeclarationInitialValue(
+    declaration: ProjectVarDeclaration,
+  ): string {
+    if (
+      declaration.initialValueExpression?.kind === "StructLiteralExpression"
+    ) {
+      return this.generateExpression(declaration.initialValueExpression);
+    }
+    return this.getDefaultValue(declaration.typeName, declaration.initialValue);
+  }
+
   private getDefaultValue(typeName: string, initialValue?: string): string {
     if (initialValue) {
       // Convert enum dot-notation (TRAFFICSTATE.RED) to C++ scoped access (TRAFFICSTATE::RED)
